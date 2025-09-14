@@ -7,14 +7,11 @@ import {
     Typography,
     Button,
     Container,
-    Paper,
-    Box,
-    Card,
-    CardContent
+    Box
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { logoutUser } from '../services/AuthService.js';
-import Chart from './Chart';
+import ContentFinder from './ContentFinder';
 import { CustomColors } from '../theme';
 
 const Dashboard = () => {
@@ -35,7 +32,7 @@ const Dashboard = () => {
             <AppBar position="static" color="secondary">
                 <Toolbar>
                     <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-                        Firebase + Vite Template
+                        Content Finder - Outstaffer Intelligence
                     </Typography>
                     <Typography variant="bodySmall" sx={{ mr: 2 }}>
                         {currentUser?.email}
@@ -52,25 +49,7 @@ const Dashboard = () => {
             </AppBar>
 
             <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-                <Paper elevation={1} sx={{ p: 3, mb: 3 }}>
-                    <Typography variant="h4" component="h2" gutterBottom>
-                        Dashboard
-                    </Typography>
-                    <Typography variant="body" color="text.secondary" gutterBottom>
-                        Welcome to your dashboard! Below is an example chart created with ECharts.
-                    </Typography>
-                </Paper>
-
-                <Card>
-                    <CardContent>
-                        <Typography variant="h5" component="h3" gutterBottom>
-                            Sample Chart
-                        </Typography>
-                        <Box sx={{ height: 400 }}>
-                            <Chart />
-                        </Box>
-                    </CardContent>
-                </Card>
+                <ContentFinder />
             </Container>
         </Box>
     );
