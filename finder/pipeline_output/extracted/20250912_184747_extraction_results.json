@@ -1,0 +1,59 @@
+{
+  "success": true,
+  "id": null,
+  "status": "completed",
+  "data": {
+    "title": "Robert Half Research Reveals Key Hiring Challenges for Small and Midsize Businesses Heading Into 2025",
+    "summary": "Research from Robert Half highlights the top hiring challenges for SMBs, including salary pressure, talent shortages, hiring delays, and cultural fit. Strategies for overcoming these challenges include promoting company strengths, hiring quickly, being flexible with requirements, and partnering with recruiters.",
+    "statistics": [
+      "Nearly half of SMB hiring managers cited meeting candidates' salary expectations as a challenge.",
+      "More than 4 in 10 managers named finding candidates with the required skills as a top challenge.",
+      "Nearly 4 in 10 hiring managers reported losing top candidates due to slow hiring processes.",
+      "Nearly half of SMB hiring managers are experiencing higher turnover rates due to prolonged hiring cycles.",
+      "99.7% of employer establishments in the U.S. are firms with fewer than 500 employees.",
+      "7,653 responses were collected in the 2024 Small Business Credit Survey.",
+      "72% of SMBs anticipate an increase in full-time employees.",
+      "62% of SMBs anticipate an increase in freelancers.",
+      "28% of SMBs cite access to specialized skills as the top reason for hiring freelancers."
+    ],
+    "key_insights": [
+      "Meeting salary demands is a top concern for SMBs, with nearly half of hiring managers citing it as a challenge.",
+      "There is a significant skilled talent shortage, with over 40% of managers struggling to find candidates with the required skills.",
+      "Costly hiring delays are a major issue, with nearly 40% of managers losing top candidates due to slow hiring processes.",
+      "Finding candidates that align with company culture is a challenge for more than 40% of hiring managers.",
+      "Small business revenue growth and employment growth are key indicators of the health of the small business sector.",
+      "Financial challenges are prevalent among small businesses, impacting their ability to grow and hire.",
+      "The use of personal funds to address financial challenges is common among small business owners.",
+      "SMBs are facing challenging market conditions due to economic uncertainty, inflation, and skills gaps.",
+      "Despite challenges, 57% of SMB leaders have high confidence in their ability to adapt to macroeconomic shifts.",
+      "68% of SMB decision-makers have integrated flexible work arrangements, and 56% are confident in attracting top talent."
+    ],
+    "relevance_to_eor": "The insights from Robert Half's research emphasize the importance of effective hiring strategies and the need for SMBs to adapt to a competitive talent market, which aligns with the goals of EOR services in facilitating global talent acquisition.",
+    "challenges_mentioned": [
+      "Salary pressure",
+      "Skilled talent shortage",
+      "Costly hiring delays",
+      "Finding the right workplace culture match",
+      "Financial challenges faced by small businesses.",
+      "Difficulty in obtaining financing and credit approvals.",
+      "61% of SMB decision-makers find market conditions challenging.",
+      "Top factors impacting performance include inflation (25%), skills gap (12%), and labor market tightness (11%).",
+      "SMBs are the most dissatisfied with their performance outcomes compared to other business sizes."
+    ],
+    "strategies_solutions": [
+      "Promote company strengths beyond salary, such as culture, flexible work options, and career advancement opportunities.",
+      "Hire quickly by leveraging fewer stakeholders in the hiring process.",
+      "Be flexible with requirements and consider training high-potential candidates.",
+      "Partner with a specialized recruiter to effectively market the company and identify suitable candidates.",
+      "Utilizing personal funds to manage financial difficulties.",
+      "Improving financial health through better credit management.",
+      "Engaging freelancers to fill skill gaps and enhance business agility.",
+      "Prioritizing talent acquisition and retention as a strategic focus for Q2 2025.",
+      "Utilizing flexible work arrangements to attract qualified workers."
+    ]
+  },
+  "error": null,
+  "warning": null,
+  "sources": null,
+  "expires_at": null
+}
