@@ -1,81 +1,77 @@
 #!/usr/bin/env python3
-"""CLI interface for the content finder pipeline using the new backend structure"""
-import argparse
+"""
+CLI script for running the Content Finder Intelligence Engine
+Usage: python cli.py [segment_name]
+"""
 import sys
+import os
 from pathlib import Path
 
 # Add backend to Python path
 backend_path = Path(__file__).parent / "backend"
 sys.path.insert(0, str(backend_path))
 
-from core.pipeline import ContentPipeline
-
+try:
+    from intelligence.intelligence_engine import IntelligenceEngine
+except ImportError as e:
+    print(f"Error importing intelligence engine: {e}")
+    print("Make sure you're running from the project root directory")
+    sys.exit(1)
 
 def main():
-    parser = argparse.ArgumentParser(description="Content Finder CLI")
-    parser.add_argument("command", choices=["search", "scrape", "analyze", "pipeline"], 
-                       help="Command to run")
-    parser.add_argument("--query", help="Search query")
-    parser.add_argument("--urls", nargs="*", help="URLs to process")
-    parser.add_argument("--content", help="Content to analyze")
-    parser.add_argument("--limit", type=int, default=15, help="Search result limit")
-    parser.add_argument("--max-urls", type=int, default=3, help="Max URLs to process in pipeline")
-    parser.add_argument("--output-dir", help="Output directory")
-    
-    args = parser.parse_args()
-    
-    # Initialize pipeline
-    pipeline = ContentPipeline()
-    
-    if args.command == "search":
-        if not args.query:
-            print("Error: --query required for search command")
-            return 1
-            
-        print(f"Searching for: {args.query}")
-        result = pipeline.search_only(args.query, args.limit)
-        print(f"Found {len(result.get('results', []))} results")
+    """Main CLI entry point"""
+    try:
+        # Change to backend directory for proper file paths
+        os.chdir("backend")
         
-    elif args.command == "scrape":
-        if not args.urls:
-            print("Error: --urls required for scrape command")
-            return 1
-            
-        print(f"Scraping {len(args.urls)} URLs...")
-        results = pipeline.scrape_urls(args.urls)
-        successful = len([r for r in results if r.get('success')])
-        print(f"Successfully scraped {successful}/{len(results)} URLs")
+        engine = IntelligenceEngine()
         
-    elif args.command == "analyze":
-        if not args.content:
-            print("Error: --content required for analyze command")
-            return 1
+        if len(sys.argv) > 1:
+            # Run specific segment
+            segment_arg = sys.argv[1]
             
-        print("Analyzing content with Gemini...")
-        result = pipeline.analyze_content(args.content)
-        if result.get('success'):
-            print("Analysis completed successfully")
+            # Convert segment name to key if needed
+            if segment_arg in engine.config["segments"]:
+                segment_key = segment_arg
+            else:
+                # Try to find by name
+                segment_key = None
+                for key, data in engine.config["segments"].items():
+                    if data["name"].lower() == segment_arg.lower():
+                        segment_key = key
+                        break
+                
+                if not segment_key:
+                    print(f"Error: Segment '{segment_arg}' not found")
+                    print(f"Available segments:")
+                    for key, data in engine.config["segments"].items():
+                        print(f"  - {key} ({data['name']})")
+                    return
+            
+            print(f"Running segment: {engine.config['segments'][segment_key]['name']}")
+            results = engine.run_single_segment(segment_key)
+            
+            if 'error' in results:
+                print(f"Error: {results['error']}")
+            else:
+                print(f"✅ Segment completed: {results['total_analyzed']} analyses generated")
         else:
-            print(f"Analysis failed: {result.get('error')}")
+            # Run all segments
+            print("Running all intelligence segments...")
+            results = engine.run_all_segments()
             
-    elif args.command == "pipeline":
-        if not args.query:
-            print("Error: --query required for pipeline command")
-            return 1
-            
-        print(f"Running full pipeline for: {args.query}")
-        output_dir = Path(args.output_dir) if args.output_dir else None
-        result = pipeline.run_full_pipeline(args.query, args.max_urls, output_dir)
+            print("\n📊 Final Summary:")
+            total_analyzed = sum(s.get('total_analyzed', 0) for s in results.get('segments', {}).values())
+            total_scraped = sum(s.get('total_scraped', 0) for s in results.get('segments', {}).values())
+            print(f"  - Total content analyzed: {total_analyzed}")
+            print(f"  - Total content scraped: {total_scraped}")
+            print(f"  - Segments processed: {len(results.get('segments', {}))}")
+            print(f"  - Output saved to: intelligence_output_{engine.run_id}/")
         
-        if result.get('error'):
-            print(f"Pipeline failed: {result['error']}")
-            return 1
-        else:
-            print("Pipeline completed successfully!")
-            print(f"Processed {len(result.get('urls', []))} URLs")
-    
-    return 0
-
+    except Exception as e:
+        print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

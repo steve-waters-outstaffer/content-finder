@@ -6,6 +6,7 @@ from flask_cors import CORS
 from api.search import search_bp
 from api.scrape import scrape_bp
 from api.analyze import analyze_bp
+from api.intelligence import intelligence_bp
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +24,7 @@ def create_app():
     app.register_blueprint(search_bp, url_prefix='/api')
     app.register_blueprint(scrape_bp, url_prefix='/api')
     app.register_blueprint(analyze_bp, url_prefix='/api')
+    app.register_blueprint(intelligence_bp, url_prefix='/api')
     
     @app.route('/')
     def health_check():
@@ -51,4 +53,5 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    app.run(debug=True)
+    print("Starting Flask server on http://localhost:5000")
+    app.run(debug=True, host='0.0.0.0', port=5000)

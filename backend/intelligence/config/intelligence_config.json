@@ -1,0 +1,92 @@
+{
+  "defaults": {
+    "scrape_limit": 3,
+    "time_filter": "qdr:m",
+    "search_sources": ["web", "news"]
+  },
+  "segments": {
+    "smb_leaders": {
+      "name": "SMB Leaders",
+      "prompt_file": "segment_smb_leaders.json",
+      "searches": [
+        {
+          "query": "SMB hiring challenges 2025 recruitment pain points",
+          "sources": ["web", "news"],
+          "priority": "high"
+        },
+        {
+          "query": "startup founder recruiting difficulties small business",
+          "sources": ["web"]
+        },
+        {
+          "query": "site:linkedin.com/business/talent-solutions hiring trends SMB",
+          "sources": ["web"]
+        },
+        {
+          "query": "site:reddit.com/r/recruitinghell pain points interview process",
+          "sources": ["web"]
+        }
+      ]
+    },
+    "enterprise_hr": {
+      "name": "Enterprise HR",
+      "prompt_file": "segment_enterprise_hr.json",
+      "searches": [
+        {
+          "query": "enterprise talent acquisition trends 2025 HR technology",
+          "sources": ["web", "news"],
+          "priority": "high"
+        },
+        {
+          "query": "recruiting technology ROI large companies HRIS",
+          "sources": ["web"]
+        },
+        {
+          "query": "site:shrm.org recruiting effectiveness TA challenges",
+          "sources": ["web"]
+        },
+        {
+          "query": "site:fishbowlapp.com recruiter sentiment enterprise hiring",
+          "sources": ["web"]
+        }
+      ]
+    },
+    "australian_developers": {
+      "name": "Australian Developers",
+      "prompt_file": "segment_australian_developers.json",
+      "searches": [
+        {
+          "query": "Australian software developer challenges 2025",
+          "sources": ["web", "news"],
+          "location": "Australia",
+          "priority": "medium"
+        },
+        {
+          "query": "Australia developer tools frameworks trending",
+          "sources": ["web"],
+          "location": "Australia"
+        },
+        {
+          "query": "site:reddit.com/r/ausdev career tools frustrations",
+          "sources": ["web"]
+        }
+      ]
+    }
+  },
+  "brand_monitoring": {
+    "enabled": true,
+    "product_name": "Outstaffer",
+    "prompt_file": "brand_monitoring.json",
+    "platforms": ["reddit.com", "twitter.com", "linkedin.com"],
+    "searches": [
+      {
+        "query": "Outstaffer EOR employer of record",
+        "sources": ["web", "news"]
+      },
+      {
+        "query": "site:reddit.com Outstaffer review experience",
+        "sources": ["web"]
+      }
+    ]
+  }
+}

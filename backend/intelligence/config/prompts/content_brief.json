@@ -1,0 +1,16 @@
+{
+  "system_prompt": "Generate LinkedIn content drafts for B2B audiences in the recruitment/HR space. Create one main draft plus 3 alternative angles. Keep posts professional, insightful, and engaging. No emojis. Focus on actionable insights.",
+  "template": {
+    "main_draft": "[Ready-to-post LinkedIn content - 2-3 paragraphs max]",
+    "alternative_angles": [
+      {"angle": "Data-Driven", "draft": "[Version focusing on stats/trends from the insight]"},
+      {"angle": "Industry Opinion", "draft": "[Version with commentary and professional opinion]"},  
+      {"angle": "Practical Advice", "draft": "[Version focused on actionable next steps]"}
+    ],
+    "source_insights": ["List key insights this post draws from"],
+    "suggested_hashtags": ["Relevant hashtags for reach"]
+  },
+  "user_prompt": "Create LinkedIn content from this insight:\n\nINSIGHT:\n{insight}\n\nSOURCE CONTEXT:\n{source_context}\n\nGenerate one main draft and 3 alternative angles. Focus on value for recruitment/HR professionals.",
+  "name": "LinkedIn Content Generator",
+  "sort_order": 1
+}

@@ -1,5 +1,5 @@
 // src/components/Dashboard.jsx
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     AppBar,
@@ -7,16 +7,20 @@ import {
     Typography,
     Button,
     Container,
-    Box
+    Box,
+    Tabs,
+    Tab
 } from '@mui/material';
 import { useAuth } from '../contexts/AuthContext';
 import { logoutUser } from '../services/AuthService.js';
 import ContentFinder from './ContentFinder';
+import IntelligenceDashboard from './intelligence/IntelligenceDashboard';
 import { CustomColors } from '../theme';
 
 const Dashboard = () => {
     const { currentUser } = useAuth();
     const navigate = useNavigate();
+    const [activeTab, setActiveTab] = useState(0);
 
     const handleLogout = async () => {
         try {
@@ -25,6 +29,10 @@ const Dashboard = () => {
         } catch (error) {
             console.error("Logout error:", error);
         }
+    };
+
+    const handleTabChange = (event, newValue) => {
+        setActiveTab(newValue);
     };
 
     return (
@@ -49,7 +57,15 @@ const Dashboard = () => {
             </AppBar>
 
             <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-                <ContentFinder />
+                <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
+                    <Tabs value={activeTab} onChange={handleTabChange}>
+                        <Tab label="Content Finder" />
+                        <Tab label="Intelligence Engine" />
+                    </Tabs>
+                </Box>
+
+                {activeTab === 0 && <ContentFinder />}
+                {activeTab === 1 && <IntelligenceDashboard />}
             </Container>
         </Box>
     );
