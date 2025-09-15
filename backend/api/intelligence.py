@@ -216,6 +216,8 @@ Requirements:
     ]
 
 intelligence_bp = Blueprint('intelligence', __name__)
+
+@intelligence_bp.route('/intelligence/config', methods=['GET'])
 def get_intelligence_config():
     """Get the intelligence configuration"""
     config = {
