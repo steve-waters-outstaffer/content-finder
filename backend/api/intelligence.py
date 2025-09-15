@@ -334,3 +334,37 @@ def get_segment_results(run_id, segment_key):
         
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@intelligence_bp.route('/segments', methods=['GET'])
+def get_segments():
+    try:
+        segments = engine.get_segments()
+        segment_names = [s.get("name") for s in segments]
+        return jsonify(segment_names)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@intelligence_bp.route('/start-research', methods=['POST'])
+def start_research():
+    data = request.get_json()
+    segment_name = data.get('segment')
+    if not segment_name:
+        return jsonify({"error": "Segment name is required."}), 400
+    try:
+        results = engine.start_research_phase(segment_name)
+        return jsonify(results)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@intelligence_bp.route('/start-processing', methods=['POST'])
+def start_processing():
+    data = request.get_json()
+    segment_name = data.get('segment')
+    urls = data.get('urls')
+    if not segment_name or not urls:
+        return jsonify({"error": "Segment name and a list of URLs are required."}), 400
+    try:
+        engine.start_processing_phase(segment_name, urls)
+        return jsonify({"message": f"Processing started for {len(urls)} URLs."})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
