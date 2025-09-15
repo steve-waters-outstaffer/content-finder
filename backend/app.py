@@ -1,9 +1,14 @@
 """Main Flask application"""
+import os
+from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
 from api.search import search_bp
 from api.scrape import scrape_bp
 from api.analyze import analyze_bp
+
+# Load environment variables
+load_dotenv()
 
 
 def create_app():

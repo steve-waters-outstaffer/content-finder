@@ -1,4 +1,5 @@
 """Main content pipeline orchestrator"""
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional
@@ -13,8 +14,12 @@ class ContentPipeline:
     
     def __init__(self, firecrawl_api_key: Optional[str] = None, gemini_api_key: Optional[str] = None):
         """Initialize pipeline with API clients"""
-        self.firecrawl = FirecrawlClient(api_key=firecrawl_api_key)
-        self.gemini = GeminiClient(api_key=gemini_api_key)
+        # Use provided keys or fallback to environment variables
+        firecrawl_key = firecrawl_api_key or os.environ.get('FIRECRAWL_API_KEY')
+        gemini_key = gemini_api_key or os.environ.get('GEMINI_API_KEY')
+        
+        self.firecrawl = FirecrawlClient(api_key=firecrawl_key)
+        self.gemini = GeminiClient(api_key=gemini_key)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     
     def run_full_pipeline(self, query: str, max_urls: int = 3, output_dir: Optional[Path] = None) -> Dict[str, Any]:

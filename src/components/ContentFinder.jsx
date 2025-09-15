@@ -597,14 +597,14 @@ const ContentFinder = () => {
             <Card sx={{ mb: 3 }}>
                 <CardContent>
                     <Typography variant="h5" gutterBottom fontWeight={FontWeight.SemiBold}>
-                        Content Intelligence Pipeline
+                        Content Pipeline
                     </Typography>
                     <Typography variant="body" color="text.secondary" sx={{ mb: 3 }}>
-                        Search, scrape, and analyze content for recruitment and EOR industry insights
+                        Search, scrape, and analyse content for recruitment and EOR industry insights
                     </Typography>
 
                     {/* Search Input */}
-                    <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                    <Box sx={{ display: 'flex', gap: 2, mb: 2, mt: 2 }}>
                         <TextField
                             fullWidth
                             variant="outlined"
