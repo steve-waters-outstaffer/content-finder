@@ -44,11 +44,11 @@ const ContentFinder = () => {
     const [processingStatus, setProcessingStatus] = useState({}); // Track individual URL status
     const [sourceRatings, setSourceRatings] = useState({}); // Track source ratings
     const [contentRatings, setContentRatings] = useState({}); // Track content ratings
-    
+
     // Curated search terms for quick selection
     const curatedTerms = [
         'SMB hiring challenges 2025',
-        'APAC talent recruitment trends', 
+        'APAC talent recruitment trends',
         'EOR global hiring benefits',
         'AI in staffing industry'
     ];
@@ -66,7 +66,7 @@ const ContentFinder = () => {
 
         try {
             // Only search, don't run full pipeline
-            const response = await fetch('http://localhost:5000/api/search', {
+            const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/search', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -82,7 +82,7 @@ const ContentFinder = () => {
             }
 
             const searchData = await response.json();
-            
+
             // Structure results to match expected format
             setResults({
                 query: searchQuery,
@@ -120,13 +120,13 @@ const ContentFinder = () => {
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.2 }}>
                 {[1,2,3,4,5].map(star => (
-                    <Typography 
+                    <Typography
                         key={star}
                         onClick={() => onRate(star)}
-                        sx={{ 
+                        sx={{
                             cursor: 'pointer',
                             fontSize: '16px',
-                            '&:hover': { 
+                            '&:hover': {
                                 opacity: 0.7,
                                 transform: 'scale(1.1)'
                             },
@@ -153,8 +153,8 @@ const ContentFinder = () => {
         try {
             // Step 1: Scrape the URL
             console.log(`🔄 Processing: ${url}`);
-            
-            const scrapeResponse = await fetch('http://localhost:5000/api/scrape', {
+
+            const scrapeResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/scrape', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -182,8 +182,8 @@ const ContentFinder = () => {
             let analysisResult = null;
             if (scrapeResult.markdown) {
                 console.log(`🤖 Analyzing: ${url}`);
-                
-                const analysisResponse = await fetch('http://localhost:5000/api/analyze', {
+
+                const analysisResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/analyze', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -262,7 +262,7 @@ const ContentFinder = () => {
         setError('');
 
         try {
-            const response = await fetch('http://localhost:5000/api/scrape', {
+            const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/scrape', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -277,7 +277,7 @@ const ContentFinder = () => {
             }
 
             const scrapeData = await response.json();
-            
+
             // Update results with new scrape data
             setResults(prev => ({
                 ...prev,
@@ -291,7 +291,7 @@ const ContentFinder = () => {
             // Now analyze the scraped content
             const analyses = [];
             for (const result of scrapeData.results.filter(r => r.success && r.markdown)) {
-                const analysisResponse = await fetch('http://localhost:5000/api/analyze', {
+                const analysisResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/analyze', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -336,22 +336,22 @@ const ContentFinder = () => {
                         <SearchIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
                         Search Results ({searchResults.length} found)
                     </Typography>
-                    
+
                     {searchResults.map((result, index) => {
                         const isProcessing = processingUrls.has(result.url);
                         const processedData = processedResults[result.url];
                         const hasBeenProcessed = !!processedData;
                         const currentStatus = processingStatus[result.url];
-                        
+
                         return (
-                            <Paper 
-                                key={index} 
-                                elevation={0} 
-                                sx={{ 
-                                    p: 2, 
-                                    mb: 1, 
+                            <Paper
+                                key={index}
+                                elevation={0}
+                                sx={{
+                                    p: 2,
+                                    mb: 1,
                                     border: `2px solid ${
-                                        hasBeenProcessed 
+                                        hasBeenProcessed
                                             ? (processedData.error ? CustomColors.DarkRed : CustomColors.SecretGarden)
                                             : CustomColors.UIGrey300
                                     }`,
@@ -367,9 +367,9 @@ const ContentFinder = () => {
                                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                                             {result.description || 'No description available'}
                                         </Typography>
-                                        <Typography 
-                                            variant="caption" 
-                                            sx={{ 
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
                                                 color: CustomColors.DeepSkyBlue,
                                                 textDecoration: 'underline',
                                                 cursor: 'pointer'
@@ -388,7 +388,7 @@ const ContentFinder = () => {
                                                 'Source Quality'
                                             )}
                                         </Box>
-                                        
+
                                         {/* Show detailed processing status */}
                                         {(isProcessing || hasBeenProcessed) && (
                                             <Box sx={{ mt: 1 }}>
@@ -401,7 +401,7 @@ const ContentFinder = () => {
                                                         </Typography>
                                                     </Box>
                                                 )}
-                                                
+
                                                 {hasBeenProcessed && !isProcessing && (
                                                     <Box>
                                                         {processedData.error ? (
@@ -410,7 +410,7 @@ const ContentFinder = () => {
                                                             </Typography>
                                                         ) : (
                                                             <Typography variant="caption" color="success.main">
-                                                                ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} | 
+                                                                ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} |
                                                                 Analyzed {processedData.analysis?.success ? '✓' : '✗'}
                                                             </Typography>
                                                         )}
@@ -419,7 +419,7 @@ const ContentFinder = () => {
                                             </Box>
                                         )}
                                     </Box>
-                                    
+
                                     <Box sx={{ ml: 2 }}>
                                         <Button
                                             variant={hasBeenProcessed ? "outlined" : "contained"}
@@ -448,10 +448,10 @@ const ContentFinder = () => {
     };
 
     const renderAnalysis = () => {
-        const analysisEntries = Object.entries(processedResults).filter(([url, data]) => 
+        const analysisEntries = Object.entries(processedResults).filter(([url, data]) =>
             data.analysis?.success && !data.error
         );
-        
+
         if (analysisEntries.length === 0) return null;
 
         return (
@@ -474,9 +474,9 @@ const ContentFinder = () => {
                             <AccordionDetails sx={{ pt: 0 }}>
                                 {/* AI Insights - Primary Content */}
                                 <Accordion defaultExpanded sx={{ mb: 1, boxShadow: 'none' }}>
-                                    <AccordionSummary 
+                                    <AccordionSummary
                                         expandIcon={<ExpandMoreIcon />}
-                                        sx={{ 
+                                        sx={{
                                             bgcolor: CustomColors.AliceBlue,
                                             borderRadius: 1,
                                             mb: 1,
@@ -488,7 +488,7 @@ const ContentFinder = () => {
                                         </Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                        <Box sx={{ 
+                                        <Box sx={{
                                             bgcolor: CustomColors.UIGrey100,
                                             p: 2,
                                             borderRadius: 1,
@@ -499,7 +499,7 @@ const ContentFinder = () => {
                                                 {data.analysis.analysis}
                                             </Typography>
                                         </Box>
-                                        
+
                                         {/* Content Rating */}
                                         {renderStarRating(
                                             contentRatings[url],
@@ -511,9 +511,9 @@ const ContentFinder = () => {
 
                                 {/* Source Content - Secondary, Collapsed */}
                                 <Accordion sx={{ boxShadow: 'none' }}>
-                                    <AccordionSummary 
+                                    <AccordionSummary
                                         expandIcon={<ExpandMoreIcon />}
-                                        sx={{ 
+                                        sx={{
                                             bgcolor: CustomColors.UIGrey200,
                                             borderRadius: 1
                                         }}
@@ -523,8 +523,8 @@ const ContentFinder = () => {
                                         </Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                        <Typography variant="body2" sx={{ 
-                                            maxHeight: '300px', 
+                                        <Typography variant="body2" sx={{
+                                            maxHeight: '300px',
                                             overflow: 'auto',
                                             bgcolor: CustomColors.UIGrey100,
                                             p: 2,
@@ -532,7 +532,7 @@ const ContentFinder = () => {
                                             fontSize: '12px',
                                             color: CustomColors.UIGrey600
                                         }}>
-                                            {data.scrape.markdown ? 
+                                            {data.scrape.markdown ?
                                                 data.scrape.markdown.substring(0, 2000) + (data.scrape.markdown.length > 2000 ? '...' : '') :
                                                 'No content available'
                                             }
@@ -571,14 +571,14 @@ const ContentFinder = () => {
                                 </Box>
                             </AccordionSummary>
                             <AccordionDetails>
-                                <Typography variant="body2" sx={{ 
-                                    maxHeight: '200px', 
+                                <Typography variant="body2" sx={{
+                                    maxHeight: '200px',
                                     overflow: 'auto',
                                     bgcolor: CustomColors.UIGrey100,
                                     p: 2,
                                     borderRadius: 1
                                 }}>
-                                    {result.markdown ? 
+                                    {result.markdown ?
                                         result.markdown.substring(0, 1000) + (result.markdown.length > 1000 ? '...' : '') :
                                         'No content available'
                                     }
@@ -652,7 +652,7 @@ const ContentFinder = () => {
                                     onClick={() => handleCuratedTermClick(term)}
                                     variant="outlined"
                                     size="medium"
-                                    sx={{ 
+                                    sx={{
                                         cursor: 'pointer',
                                         borderRadius: '20px',
                                         borderColor: CustomColors.DeepSkyBlue,

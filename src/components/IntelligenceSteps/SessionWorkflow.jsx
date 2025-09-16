@@ -54,10 +54,10 @@ const SessionWorkflow = ({ segment, onComplete }) => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:5000/api/intelligence/sessions', {
+      const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
+        body: JSON.stringify({
           segment_name: segment.name,
           mission: `Research current trends and insights for ${segment.name} audience. Focus on actionable content for last 12 months.`
         })
@@ -71,7 +71,7 @@ const SessionWorkflow = ({ segment, onComplete }) => {
       const result = await response.json();
       setSessionId(result.session_id);
       setActiveStep(0);
-      
+
     } catch (error) {
       setError(error.message);
     } finally {
@@ -97,25 +97,25 @@ const SessionWorkflow = ({ segment, onComplete }) => {
     switch (step) {
       case 0:
         return (
-          <QueryGeneration 
-            sessionId={sessionId}
-            segment={segment}
-            onQueriesReady={handleQueriesReady}
-          />
+            <QueryGeneration
+                sessionId={sessionId}
+                segment={segment}
+                onQueriesReady={handleQueriesReady}
+            />
         );
       case 1:
         return (
-          <SearchResults 
-            sessionId={sessionId}
-            onSearchComplete={handleSearchComplete}
-          />
+            <SearchResults
+                sessionId={sessionId}
+                onSearchComplete={handleSearchComplete}
+            />
         );
       case 2:
         return (
-          <ContentAnalysis 
-            sessionId={sessionId}
-            onAnalysisComplete={handleAnalysisComplete}
-          />
+            <ContentAnalysis
+                sessionId={sessionId}
+                onAnalysisComplete={handleAnalysisComplete}
+            />
         );
       default:
         return null;
@@ -131,114 +131,114 @@ const SessionWorkflow = ({ segment, onComplete }) => {
   // Show session creation if no session yet
   if (!sessionId) {
     return (
-      <Box>
-        <Paper elevation={0} sx={{ p: 3, textAlign: 'center', bgcolor: CustomColors.AliceBlue }}>
-          <PsychologyIcon sx={{ fontSize: 48, color: CustomColors.DeepSkyBlue, mb: 2 }} />
-          <Typography variant="h6" mb={1}>
-            Start Intelligence Research
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mb={1}>
-            Create a new research session for <strong>{segment.name}</strong>
-          </Typography>
-          <Typography variant="body2" color="text.secondary" mb={3}>
-            {segment.description}
-          </Typography>
+        <Box>
+          <Paper elevation={0} sx={{ p: 3, textAlign: 'center', bgcolor: CustomColors.AliceBlue }}>
+            <PsychologyIcon sx={{ fontSize: 48, color: CustomColors.DeepSkyBlue, mb: 2 }} />
+            <Typography variant="h6" mb={1}>
+              Start Intelligence Research
+            </Typography>
+            <Typography variant="body2" color="text.secondary" mb={1}>
+              Create a new research session for <strong>{segment.name}</strong>
+            </Typography>
+            <Typography variant="body2" color="text.secondary" mb={3}>
+              {segment.description}
+            </Typography>
 
-          {error && (
-            <Alert severity="error" sx={{ mb: 3, textAlign: 'left' }}>
-              {error}
-            </Alert>
-          )}
+            {error && (
+                <Alert severity="error" sx={{ mb: 3, textAlign: 'left' }}>
+                  {error}
+                </Alert>
+            )}
 
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={createSession}
-            disabled={creatingSession}
-            startIcon={creatingSession ? <CircularProgress size={16} /> : <PsychologyIcon />}
-            size="large"
-          >
-            {creatingSession ? 'Creating Session...' : 'Start Research Session'}
-          </Button>
-        </Paper>
-      </Box>
+            <Button
+                variant="contained"
+                color="primary"
+                onClick={createSession}
+                disabled={creatingSession}
+                startIcon={creatingSession ? <CircularProgress size={16} /> : <PsychologyIcon />}
+                size="large"
+            >
+              {creatingSession ? 'Creating Session...' : 'Start Research Session'}
+            </Button>
+          </Paper>
+        </Box>
     );
   }
 
   return (
-    <Box>
-      {/* Header with Progress */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h5" fontWeight={FontWeight.Bold}>
-            Intelligence Research: {segment.name}
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Session: {sessionId?.slice(-8)}
-          </Typography>
+      <Box>
+        {/* Header with Progress */}
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Box>
+            <Typography variant="h5" fontWeight={FontWeight.Bold}>
+              Intelligence Research: {segment.name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Session: {sessionId?.slice(-8)}
+            </Typography>
+          </Box>
+
+          <Stack direction="row" spacing={1}>
+            {steps.map((step, index) => (
+                <Chip
+                    key={index}
+                    icon={step.icon}
+                    label={step.label}
+                    color={getStepStatus(index) === 'completed' ? 'success' :
+                        getStepStatus(index) === 'active' ? 'primary' : 'default'}
+                    variant={getStepStatus(index) === 'active' ? 'filled' : 'outlined'}
+                    size="small"
+                />
+            ))}
+          </Stack>
         </Box>
-        
-        <Stack direction="row" spacing={1}>
+
+        {/* Stepper */}
+        <Stepper activeStep={activeStep} orientation="vertical" sx={{ mb: 3 }}>
           {steps.map((step, index) => (
-            <Chip
-              key={index}
-              icon={step.icon}
-              label={step.label}
-              color={getStepStatus(index) === 'completed' ? 'success' : 
-                     getStepStatus(index) === 'active' ? 'primary' : 'default'}
-              variant={getStepStatus(index) === 'active' ? 'filled' : 'outlined'}
-              size="small"
-            />
-          ))}
-        </Stack>
-      </Box>
-
-      {/* Stepper */}
-      <Stepper activeStep={activeStep} orientation="vertical" sx={{ mb: 3 }}>
-        {steps.map((step, index) => (
-          <Step key={step.label}>
-            <StepLabel
-              StepIconComponent={({ active, completed }) => (
-                <Box
-                  sx={{
-                    width: 32,
-                    height: 32,
-                    borderRadius: '50%',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    backgroundColor: completed ? CustomColors.SecretGarden :
-                                   active ? CustomColors.DeepSkyBlue : CustomColors.UIGrey300,
-                    color: 'white'
-                  }}
+              <Step key={step.label}>
+                <StepLabel
+                    StepIconComponent={({ active, completed }) => (
+                        <Box
+                            sx={{
+                              width: 32,
+                              height: 32,
+                              borderRadius: '50%',
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              backgroundColor: completed ? CustomColors.SecretGarden :
+                                  active ? CustomColors.DeepSkyBlue : CustomColors.UIGrey300,
+                              color: 'white'
+                            }}
+                        >
+                          {completed ? <CheckCircleIcon sx={{ fontSize: 20 }} /> : step.icon}
+                        </Box>
+                    )}
                 >
-                  {completed ? <CheckCircleIcon sx={{ fontSize: 20 }} /> : step.icon}
-                </Box>
-              )}
-            >
-              <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
-                {step.label}
-              </Typography>
-              <Typography variant="body2" color="text.secondary">
-                {step.description}
-              </Typography>
-            </StepLabel>
-            <StepContent>
-              <Box mt={2}>
-                {renderStepContent(index)}
-              </Box>
-            </StepContent>
-          </Step>
-        ))}
-      </Stepper>
+                  <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
+                    {step.label}
+                  </Typography>
+                  <Typography variant="body2" color="text.secondary">
+                    {step.description}
+                  </Typography>
+                </StepLabel>
+                <StepContent>
+                  <Box mt={2}>
+                    {renderStepContent(index)}
+                  </Box>
+                </StepContent>
+              </Step>
+          ))}
+        </Stepper>
 
-      {/* Current Step Content (when not using stepper content) */}
-      {activeStep >= 0 && (
-        <Paper elevation={0} sx={{ p: 3, bgcolor: CustomColors.UIGrey50 }}>
-          {renderStepContent(activeStep)}
-        </Paper>
-      )}
-    </Box>
+        {/* Current Step Content (when not using stepper content) */}
+        {activeStep >= 0 && (
+            <Paper elevation={0} sx={{ p: 3, bgcolor: CustomColors.UIGrey50 }}>
+              {renderStepContent(activeStep)}
+            </Paper>
+        )}
+      </Box>
   );
 };
 

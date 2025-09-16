@@ -56,7 +56,7 @@ const IntelligenceDashboard = () => {
   const loadIntelligenceConfig = async () => {
     setLoading(true);
     try {
-      const response = await fetch('http://localhost:5000/api/intelligence/config');
+      const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/config');
       if (response.ok) {
         const data = await response.json();
         setConfig(data);
@@ -81,7 +81,7 @@ const IntelligenceDashboard = () => {
     try {
       console.log(`🚀 Creating new session for: ${segmentName}`);
 
-      const response = await fetch('http://localhost:5000/api/intelligence/sessions', {
+      const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -96,7 +96,7 @@ const IntelligenceDashboard = () => {
       }
 
       const result = await response.json();
-      
+
       // Store the session data
       setSessions(prev => ({
         ...prev,
@@ -119,7 +119,7 @@ const IntelligenceDashboard = () => {
 
   const loadSession = async (sessionId, segmentName) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/intelligence/sessions/${sessionId}`);
+      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}`);
       if (response.ok) {
         const sessionData = await response.json();
         setSessions(prev => ({ ...prev, [segmentName]: sessionData }));
@@ -132,7 +132,7 @@ const IntelligenceDashboard = () => {
 
   const updateQuerySelection = async (sessionId, segmentName, queryUpdates) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/intelligence/sessions/${sessionId}/queries`, {
+      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/queries`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query_updates: queryUpdates })
@@ -152,7 +152,7 @@ const IntelligenceDashboard = () => {
     setActiveSessions(prev => ({ ...prev, [segmentName]: 'searching' }));
 
     try {
-      const response = await fetch(`http://localhost:5000/api/intelligence/sessions/${sessionId}/search`, {
+      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -174,7 +174,7 @@ const IntelligenceDashboard = () => {
 
   const updateSourceSelection = async (sessionId, segmentName, sourceUpdates) => {
     try {
-      const response = await fetch(`http://localhost:5000/api/intelligence/sessions/${sessionId}/sources`, {
+      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/sources`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ source_updates: sourceUpdates })
@@ -193,7 +193,7 @@ const IntelligenceDashboard = () => {
     setActiveSessions(prev => ({ ...prev, [segmentName]: 'analyzing' }));
 
     try {
-      const response = await fetch(`http://localhost:5000/api/intelligence/sessions/${sessionId}/analyze`, {
+      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/analyze`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -224,106 +224,98 @@ const IntelligenceDashboard = () => {
     const hasSession = !!session;
 
     return (
-      <Grid item xs={12} md={6} key={segment.name}>
-        <Card sx={{
-          height: '100%',
-          border: `2px solid ${
-            status === 'complete' ? CustomColors.SecretGarden :
-            status ? CustomColors.DeepSkyBlue :
-            CustomColors.UIGrey300
-          }`
-        }}>
-          <CardContent>
-            <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-              <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
-                {segment.name}
-              </Typography>
-              <Stack direction="row" spacing={1}>
-                <Chip
-                  label="Session-Based"
-                  size="small"
-                  variant="outlined"
-                  sx={{
-                    borderColor: CustomColors.DeepSkyBlue,
-                    color: CustomColors.DeepSkyBlue
-                  }}
-                />
-                <IconButton size="small" onClick={() => showSessionHistory(segment.name)}>
-                  <HistoryIcon />
-                </IconButton>
-              </Stack>
-            </Box>
-
-            <Typography variant="body2" color="text.secondary" mb={2}>
-              {segment.description}
-            </Typography>
-
-            {/* Session Status & Progress */}
-            {hasSession && (
-              <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.AliceBlue }}>
-                <Typography variant="subtitle2" mb={1} fontWeight={FontWeight.Medium}>
-                  Session Progress:
+        <Grid item xs={12} md={6} key={segment.name}>
+          <Card sx={{
+            height: '100%',
+            border: `2px solid ${
+                status === 'complete' ? CustomColors.SecretGarden :
+                    status ? CustomColors.DeepSkyBlue :
+                        CustomColors.UIGrey300
+            }`
+          }}>
+            <CardContent>
+              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
+                  {segment.name}
                 </Typography>
-                <Box display="flex" alignItems="center" gap={2} mb={1}>
-                  <Typography variant="body2" color="primary" fontWeight={FontWeight.Medium}>
-                    {getStatusDisplay(status)}
-                  </Typography>
-                  {isStatusActive(status) && <CircularProgress size={16} />}
-                </Box>
-                
-                {/* Progress Stats */}
-                <Stack direction="row" spacing={2}>
-                  <Box>
-                    <Typography variant="h6" color="primary" fontWeight={FontWeight.Bold}>
-                      {session.stats?.queries_generated || 0}
-                    </Typography>
-                    <Typography variant="caption">Queries</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="h6" color="success.main" fontWeight={FontWeight.Bold}>
-                      {session.stats?.sources_found || 0}
-                    </Typography>
-                    <Typography variant="caption">Sources</Typography>
-                  </Box>
-                  <Box>
-                    <Typography variant="h6" color="secondary.main" fontWeight={FontWeight.Bold}>
-                      {session.stats?.themes_generated || 0}
-                    </Typography>
-                    <Typography variant="caption">Themes</Typography>
-                  </Box>
+                <Stack direction="row" spacing={1}>
+
+                  <IconButton size="small" onClick={() => showSessionHistory(segment.name)}>
+                    <HistoryIcon />
+                  </IconButton>
                 </Stack>
-              </Paper>
-            )}
+              </Box>
 
-            {/* Session Workflow Steps */}
-            {hasSession && renderSessionWorkflow(session, segment.name, status)}
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                {segment.description}
+              </Typography>
 
-            {/* Action Buttons */}
-            <Divider sx={{ my: 2 }} />
-            <Box display="flex" justifyContent="space-between" alignItems="center">
-              {!hasSession ? (
-                <Button
-                  variant="contained"
-                  color="primary"
-                  onClick={() => createNewSession(segment.name)}
-                  disabled={loading}
-                  startIcon={<PsychologyIcon />}
-                >
-                  Start New Session
-                </Button>
-              ) : (
-                renderActionButton(session, segment.name, status)
+              {/* Session Status & Progress */}
+              {hasSession && (
+                  <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.AliceBlue }}>
+                    <Typography variant="subtitle2" mb={1} fontWeight={FontWeight.Medium}>
+                      Session Progress:
+                    </Typography>
+                    <Box display="flex" alignItems="center" gap={2} mb={1}>
+                      <Typography variant="body2" color="primary" fontWeight={FontWeight.Medium}>
+                        {getStatusDisplay(status)}
+                      </Typography>
+                      {isStatusActive(status) && <CircularProgress size={16} />}
+                    </Box>
+
+                    {/* Progress Stats */}
+                    <Stack direction="row" spacing={2}>
+                      <Box>
+                        <Typography variant="h6" color="primary" fontWeight={FontWeight.Bold}>
+                          {session.stats?.queries_generated || 0}
+                        </Typography>
+                        <Typography variant="caption">Queries</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="h6" color="success.main" fontWeight={FontWeight.Bold}>
+                          {session.stats?.sources_found || 0}
+                        </Typography>
+                        <Typography variant="caption">Sources</Typography>
+                      </Box>
+                      <Box>
+                        <Typography variant="h6" color="secondary.main" fontWeight={FontWeight.Bold}>
+                          {session.stats?.themes_generated || 0}
+                        </Typography>
+                        <Typography variant="caption">Themes</Typography>
+                      </Box>
+                    </Stack>
+                  </Paper>
               )}
 
-              {hasSession && session.updatedAt && (
-                <Typography variant="caption" color="text.secondary">
-                  Updated: {new Date(session.updatedAt.seconds * 1000).toLocaleString()}
-                </Typography>
-              )}
-            </Box>
-          </CardContent>
-        </Card>
-      </Grid>
+              {/* Session Workflow Steps */}
+              {hasSession && renderSessionWorkflow(session, segment.name, status)}
+
+              {/* Action Buttons */}
+              <Divider sx={{ my: 2 }} />
+              <Box display="flex" justifyContent="space-between" alignItems="center">
+                {!hasSession ? (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        onClick={() => createNewSession(segment.name)}
+                        disabled={loading}
+                        startIcon={<PsychologyIcon />}
+                    >
+                      Start New Research
+                    </Button>
+                ) : (
+                    renderActionButton(session, segment.name, status)
+                )}
+
+                {hasSession && session.updatedAt && (
+                    <Typography variant="caption" color="text.secondary">
+                      Updated: {new Date(session.updatedAt.seconds * 1000).toLocaleString()}
+                    </Typography>
+                )}
+              </Box>
+            </CardContent>
+          </Card>
+        </Grid>
     );
   };
 
@@ -331,141 +323,141 @@ const IntelligenceDashboard = () => {
     const { queries = [], searchResults = [], themes = [] } = session;
 
     return (
-      <Box mb={2}>
-        {/* Step 1: Query Generation & Selection */}
-        {queries.length > 0 && (
-          <Accordion defaultExpanded={status === 'queries_ready'}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                <SearchIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                Generated Queries ({queries.length})
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              <List dense>
-                {queries.map((query, idx) => (
-                  <ListItem key={query.id} sx={{ px: 0 }}>
-                    <FormControlLabel
-                      control={
-                        <Checkbox
-                          checked={query.selected}
-                          onChange={(e) => {
-                            const updates = [{
-                              id: query.id,
-                              selected: e.target.checked
-                            }];
-                            updateQuerySelection(session.sessionId, segmentName, updates);
-                          }}
-                          disabled={status !== 'queries_ready'}
-                        />
-                      }
-                      label={
-                        <Typography variant="body2">
-                          {idx + 1}. {query.text}
-                        </Typography>
-                      }
-                    />
-                  </ListItem>
-                ))}
-              </List>
-            </AccordionDetails>
-          </Accordion>
-        )}
-
-        {/* Step 2: Search Results & Source Selection */}
-        {searchResults.length > 0 && (
-          <Accordion defaultExpanded={status === 'search_complete'} sx={{ mt: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                <LinkIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                Search Results ({getTotalSources(searchResults)} sources)
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {searchResults.map((result, idx) => (
-                <Box key={idx} mb={2}>
-                  <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
-                    Query: {result.query}
+        <Box mb={2}>
+          {/* Step 1: Query Generation & Selection */}
+          {queries.length > 0 && (
+              <Accordion defaultExpanded={status === 'queries_ready'}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
+                    <SearchIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
+                    Generated Queries ({queries.length})
                   </Typography>
+                </AccordionSummary>
+                <AccordionDetails>
                   <List dense>
-                    {result.sources?.map((source) => (
-                      <ListItem key={source.id} sx={{ px: 0 }}>
-                        <FormControlLabel
-                          control={
-                            <Checkbox
-                              checked={source.selected}
-                              onChange={(e) => {
-                                const updates = [{
-                                  id: source.id,
-                                  selected: e.target.checked
-                                }];
-                                updateSourceSelection(session.sessionId, segmentName, updates);
-                              }}
-                              disabled={status !== 'search_complete'}
-                            />
-                          }
-                          label={
-                            <Box>
-                              <Typography variant="body2" fontWeight={FontWeight.Medium}>
-                                {source.title}
-                              </Typography>
-                              <Typography 
-                                variant="caption" 
-                                sx={{ 
-                                  cursor: 'pointer', 
-                                  color: CustomColors.DeepSkyBlue,
-                                  display: 'block'
-                                }}
-                                onClick={() => window.open(source.url, '_blank')}
-                              >
-                                {source.url}
-                              </Typography>
-                            </Box>
-                          }
-                        />
-                      </ListItem>
+                    {queries.map((query, idx) => (
+                        <ListItem key={query.id} sx={{ px: 0 }}>
+                          <FormControlLabel
+                              control={
+                                <Checkbox
+                                    checked={query.selected}
+                                    onChange={(e) => {
+                                      const updates = [{
+                                        id: query.id,
+                                        selected: e.target.checked
+                                      }];
+                                      updateQuerySelection(session.sessionId, segmentName, updates);
+                                    }}
+                                    disabled={status !== 'queries_ready'}
+                                />
+                              }
+                              label={
+                                <Typography variant="body2">
+                                  {idx + 1}. {query.text}
+                                </Typography>
+                              }
+                          />
+                        </ListItem>
                     ))}
                   </List>
-                </Box>
-              ))}
-            </AccordionDetails>
-          </Accordion>
-        )}
+                </AccordionDetails>
+              </Accordion>
+          )}
 
-        {/* Step 3: Analysis Results */}
-        {themes.length > 0 && (
-          <Accordion defaultExpanded={status === 'complete'} sx={{ mt: 1 }}>
-            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                Content Themes ({themes.length})
-              </Typography>
-            </AccordionSummary>
-            <AccordionDetails>
-              {themes.map((theme, idx) => (
-                <Paper key={idx} elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.UIGrey100 }}>
-                  <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
-                    {theme.theme}
+          {/* Step 2: Search Results & Source Selection */}
+          {searchResults.length > 0 && (
+              <Accordion defaultExpanded={status === 'search_complete'} sx={{ mt: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
+                    <LinkIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
+                    Search Results ({getTotalSources(searchResults)} sources)
                   </Typography>
-                  <Typography variant="body2" mb={1}>
-                    {theme.key_insight}
+                </AccordionSummary>
+                <AccordionDetails>
+                  {searchResults.map((result, idx) => (
+                      <Box key={idx} mb={2}>
+                        <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
+                          Query: {result.query}
+                        </Typography>
+                        <List dense>
+                          {result.sources?.map((source) => (
+                              <ListItem key={source.id} sx={{ px: 0 }}>
+                                <FormControlLabel
+                                    control={
+                                      <Checkbox
+                                          checked={source.selected}
+                                          onChange={(e) => {
+                                            const updates = [{
+                                              id: source.id,
+                                              selected: e.target.checked
+                                            }];
+                                            updateSourceSelection(session.sessionId, segmentName, updates);
+                                          }}
+                                          disabled={status !== 'search_complete'}
+                                      />
+                                    }
+                                    label={
+                                      <Box>
+                                        <Typography variant="body2" fontWeight={FontWeight.Medium}>
+                                          {source.title}
+                                        </Typography>
+                                        <Typography
+                                            variant="caption"
+                                            sx={{
+                                              cursor: 'pointer',
+                                              color: CustomColors.DeepSkyBlue,
+                                              display: 'block'
+                                            }}
+                                            onClick={() => window.open(source.url, '_blank')}
+                                        >
+                                          {source.url}
+                                        </Typography>
+                                      </Box>
+                                    }
+                                />
+                              </ListItem>
+                          ))}
+                        </List>
+                      </Box>
+                  ))}
+                </AccordionDetails>
+              </Accordion>
+          )}
+
+          {/* Step 3: Analysis Results */}
+          {themes.length > 0 && (
+              <Accordion defaultExpanded={status === 'complete'} sx={{ mt: 1 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
+                    <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
+                    Content Themes ({themes.length})
                   </Typography>
-                  {theme.why_smbs_care && (
-                    <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                      Why SMBs care: {theme.why_smbs_care}
-                    </Typography>
-                  )}
-                  {theme.linkedin_angle && (
-                    <Typography variant="caption" color="primary" display="block">
-                      LinkedIn angle: {theme.linkedin_angle}
-                    </Typography>
-                  )}
-                </Paper>
-              ))}
-            </AccordionDetails>
-          </Accordion>
-        )}
-      </Box>
+                </AccordionSummary>
+                <AccordionDetails>
+                  {themes.map((theme, idx) => (
+                      <Paper key={idx} elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.UIGrey100 }}>
+                        <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
+                          {theme.theme}
+                        </Typography>
+                        <Typography variant="body2" mb={1}>
+                          {theme.key_insight}
+                        </Typography>
+                        {theme.why_smbs_care && (
+                            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
+                              Why SMBs care: {theme.why_smbs_care}
+                            </Typography>
+                        )}
+                        {theme.linkedin_angle && (
+                            <Typography variant="caption" color="primary" display="block">
+                              LinkedIn angle: {theme.linkedin_angle}
+                            </Typography>
+                        )}
+                      </Paper>
+                  ))}
+                </AccordionDetails>
+              </Accordion>
+          )}
+        </Box>
     );
   };
 
@@ -473,75 +465,75 @@ const IntelligenceDashboard = () => {
     switch (status) {
       case 'generating':
         return (
-          <Button disabled startIcon={<CircularProgress size={16} />}>
-            Generating Queries...
-          </Button>
+            <Button disabled startIcon={<CircularProgress size={16} />}>
+              Generating Queries...
+            </Button>
         );
-      
+
       case 'queries_ready':
         const selectedQueries = session.queries?.filter(q => q.selected) || [];
         return (
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => searchSelectedQueries(session.sessionId, segmentName)}
-            disabled={selectedQueries.length === 0}
-            startIcon={<SearchIcon />}
-          >
-            Search ({selectedQueries.length} queries)
-          </Button>
+            <Button
+                variant="contained"
+                color="primary"
+                onClick={() => searchSelectedQueries(session.sessionId, segmentName)}
+                disabled={selectedQueries.length === 0}
+                startIcon={<SearchIcon />}
+            >
+              Search ({selectedQueries.length} queries)
+            </Button>
         );
-      
+
       case 'searching':
         return (
-          <Button disabled startIcon={<CircularProgress size={16} />}>
-            Searching...
-          </Button>
+            <Button disabled startIcon={<CircularProgress size={16} />}>
+              Searching...
+            </Button>
         );
-      
+
       case 'search_complete':
         const selectedSources = getSelectedSources(session.searchResults || []);
         return (
-          <Button
-            variant="contained"
-            color="secondary"
-            onClick={() => analyzeSelectedSources(session.sessionId, segmentName)}
-            disabled={selectedSources.length === 0}
-            startIcon={<PsychologyIcon />}
-          >
-            Analyze ({selectedSources.length} sources)
-          </Button>
+            <Button
+                variant="contained"
+                color="secondary"
+                onClick={() => analyzeSelectedSources(session.sessionId, segmentName)}
+                disabled={selectedSources.length === 0}
+                startIcon={<PsychologyIcon />}
+            >
+              Analyze ({selectedSources.length} sources)
+            </Button>
         );
-      
+
       case 'analyzing':
         return (
-          <Button disabled startIcon={<CircularProgress size={16} />}>
-            Analyzing...
-          </Button>
+            <Button disabled startIcon={<CircularProgress size={16} />}>
+              Analyzing...
+            </Button>
         );
-      
+
       case 'complete':
         return (
-          <Button
-            variant="outlined"
-            color="primary"
-            onClick={() => createNewSession(segmentName)}
-            startIcon={<PsychologyIcon />}
-          >
-            Start New Session
-          </Button>
+            <Button
+                variant="outlined"
+                color="primary"
+                onClick={() => createNewSession(segmentName)}
+                startIcon={<PsychologyIcon />}
+            >
+              Start New Session
+            </Button>
         );
-      
+
       default:
         return (
-          <Button
-            variant="contained"
-            color="primary"
-            onClick={() => createNewSession(segmentName)}
-            startIcon={<PsychologyIcon />}
-          >
-            Start Session
-          </Button>
+            <Button
+                variant="contained"
+                color="primary"
+                onClick={() => createNewSession(segmentName)}
+                startIcon={<PsychologyIcon />}
+            >
+              Start Session
+            </Button>
         );
     }
   };
@@ -578,70 +570,55 @@ const IntelligenceDashboard = () => {
   };
 
   return (
-    <Box>
-      {/* Header */}
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Box>
-          <Typography variant="h5" component="h1" fontWeight={FontWeight.Bold}>
-            Intelligence Engine
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            Session-based AI research with dynamic query generation and source analysis
-          </Typography>
+      <Box>
+        {/* Header */}
+        <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+          <Box>
+            <Typography variant="h5" component="h1" fontWeight={FontWeight.Bold}>
+              Intelligence Engine
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              AI research with dynamic query generation and source analysis
+            </Typography>
+          </Box>
         </Box>
+
+        {/* Global Loading */}
+        {loading && <LinearProgress sx={{ mb: 3 }} />}
+
+        {/* Global Error */}
+        {error && (
+            <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
+              {error}
+            </Alert>
+        )}
+
+
+        {/* Segment Cards */}
+        {config && (
+            <Grid container spacing={3}>
+              {config.monthly_run?.segments?.map(renderSessionCard)}
+            </Grid>
+        )}
+
+        {/* Session History Dialog */}
+        <Dialog
+            open={sessionDialogOpen}
+            onClose={() => setSessionDialogOpen(false)}
+            maxWidth="md"
+            fullWidth
+        >
+          <DialogTitle>Session History - {selectedSegment}</DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary">
+              Session history functionality coming soon...
+            </Typography>
+          </DialogContent>
+          <DialogActions>
+            <Button onClick={() => setSessionDialogOpen(false)}>Close</Button>
+          </DialogActions>
+        </Dialog>
       </Box>
-
-      {/* Global Loading */}
-      {loading && <LinearProgress sx={{ mb: 3 }} />}
-
-      {/* Global Error */}
-      {error && (
-        <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError('')}>
-          {error}
-        </Alert>
-      )}
-
-      {/* Configuration Info */}
-      {config && (
-        <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: CustomColors.AliceBlue }}>
-          <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
-            Session-Based Research Configuration
-          </Typography>
-          <Typography variant="body2" color="text.secondary">
-            • Multi-phase workflow: Generate → Search → Analyze
-            • Persistent sessions with Firestore
-            • Query and source selection controls
-            • AI synthesis for LinkedIn content insights
-            • Max {config.monthly_run?.scrape_top || 5} results per query
-          </Typography>
-        </Paper>
-      )}
-
-      {/* Segment Cards */}
-      {config && (
-        <Grid container spacing={3}>
-          {config.monthly_run?.segments?.map(renderSessionCard)}
-        </Grid>
-      )}
-
-      {/* Session History Dialog */}
-      <Dialog 
-        open={sessionDialogOpen} 
-        onClose={() => setSessionDialogOpen(false)}
-        maxWidth="md" 
-        fullWidth
-      >
-        <DialogTitle>Session History - {selectedSegment}</DialogTitle>
-        <DialogContent>
-          <Typography variant="body2" color="text.secondary">
-            Session history functionality coming soon...
-          </Typography>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setSessionDialogOpen(false)}>Close</Button>
-        </DialogActions>
-      </Dialog>
-    </Box>
   );
 };
 
