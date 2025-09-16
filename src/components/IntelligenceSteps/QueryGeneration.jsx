@@ -23,7 +23,7 @@ import {
   Search as SearchIcon,
   Psychology as PsychologyIcon
 } from '@mui/icons-material';
-import { CustomColors, FontWeight } from '../../../theme';
+import { CustomColors, FontWeight } from '../../theme';
 
 const QueryGeneration = ({ sessionId, segment, onQueriesReady }) => {
   const [queries, setQueries] = useState([]);

@@ -19,7 +19,7 @@ import {
   Analytics as AnalyticsIcon,
   CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { CustomColors, FontWeight } from '../../../theme';
+import { CustomColors, FontWeight } from '../../theme';
 
 import QueryGeneration from './QueryGeneration';
 import SearchResults from './SearchResults';

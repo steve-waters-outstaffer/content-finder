@@ -103,7 +103,11 @@ class ContentPipeline:
     def analyze_content(self, content: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Run analysis-only operation"""
         return self.gemini.analyze_content(content, custom_prompt)
-    
+
+    def synthesize_article(self, query: str, contents: List[Dict[str, str]]) -> Dict[str, Any]:
+        """Passes multiple documents to Gemini for synthesis."""
+        return self.gemini.synthesize_content(query, contents)
+
     def _save_pipeline_results(self, results: Dict[str, Any], output_dir: Path):
         """Save pipeline results to files"""
         # Save complete pipeline results

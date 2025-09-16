@@ -8,33 +8,17 @@ import {
   Grid,
   Chip,
   Divider,
-  List,
-  ListItem,
-  ListItemText,
   LinearProgress,
   Alert,
   Paper,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
   CircularProgress,
-  Stack,
-  Checkbox,
-  FormControlLabel,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField
-}from '@mui/material';
-import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+  Breadcrumbs,
+  Link
+} from '@mui/material';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import PsychologyIcon from '@mui/icons-material/Psychology';
-import SearchIcon from '@mui/icons-material/Search';
-import LinkIcon from '@mui/icons-material/Link';
-import HistoryIcon from '@mui/icons-material/History';
 import { CustomColors, FontWeight } from '../../theme';
+import SessionWorkflow from '../IntelligenceSteps/SessionWorkflow'; // Ensure this is imported
 
 const IntelligenceDashboard = () => {
   const [config, setConfig] = useState(null);
@@ -42,12 +26,14 @@ const IntelligenceDashboard = () => {
   const [activeSessions, setActiveSessions] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [sessionDialogOpen, setSessionDialogOpen] = useState(false);
-  const [selectedSegment, setSelectedSegment] = useState(null);
+  const [activeSegment, setActiveSegment] = useState(null); // State to manage view
 
   useEffect(() => {
-    loadIntelligenceConfig();
-  }, []);
+    // Load config only when the main dashboard is shown
+    if (!activeSegment) {
+      loadIntelligenceConfig();
+    }
+  }, [activeSegment]);
 
   const loadIntelligenceConfig = async () => {
     setLoading(true);
@@ -67,527 +53,80 @@ const IntelligenceDashboard = () => {
     }
   };
 
-  const createNewSession = async (segment) => {
-    if (!segment) return;
-
-    setActiveSessions(prev => ({ ...prev, [segment.name]: 'generating' }));
-    setError('');
-
-    try {
-      console.log(`🚀 Creating new session for: ${segment.name}`);
-
-      const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          segment_name: segment.name,
-          mission: segment.research_focus // Pass the research_focus as the mission
-        })
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      const result = await response.json();
-
-      // Store the session data
-      setSessions(prev => ({
-        ...prev,
-        [segment.name]: {
-          ...result.session,
-          sessionId: result.session_id
-        }
-      }));
-
-      setActiveSessions(prev => ({ ...prev, [segment.name]: result.session.status }));
-
-      console.log(`✅ Session created for: ${segment.name} (ID: ${result.session_id})`);
-
-    } catch (error) {
-      console.error(`Failed to create session for ${segment.name}:`, error);
-      setError(`Failed to create session for ${segment.name}: ${error.message}`);
-      setActiveSessions(prev => ({ ...prev, [segment.name]: null }));
-    }
+  const handleStartOrViewSession = (segment) => {
+    setActiveSegment(segment);
   };
 
-
-  const loadSession = async (sessionId, segmentName) => {
-    try {
-      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}`);
-      if (response.ok) {
-        const sessionData = await response.json();
-        setSessions(prev => ({ ...prev, [segmentName]: sessionData }));
-        setActiveSessions(prev => ({ ...prev, [segmentName]: sessionData.status }));
-      }
-    } catch (error) {
-      console.error(`Failed to load session ${sessionId}:`, error);
-    }
+  const handleReturnToDashboard = () => {
+    setActiveSegment(null);
   };
 
-  const updateQuerySelection = async (sessionId, segmentName, queryUpdates) => {
-    try {
-      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/queries`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query_updates: queryUpdates })
-      });
-
-      if (response.ok) {
-        // Reload session to get updated data
-        await loadSession(sessionId, segmentName);
-      }
-    } catch (error) {
-      console.error('Failed to update query selection:', error);
-      setError('Failed to update query selection');
-    }
-  };
-
-  const searchSelectedQueries = async (sessionId, segmentName) => {
-    setActiveSessions(prev => ({ ...prev, [segmentName]: 'searching' }));
-
-    try {
-      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      // Reload session to get search results
-      await loadSession(sessionId, segmentName);
-
-    } catch (error) {
-      console.error('Failed to search queries:', error);
-      setError(`Failed to search queries: ${error.message}`);
-      setActiveSessions(prev => ({ ...prev, [segmentName]: 'queries_ready' }));
-    }
-  };
-
-  const updateSourceSelection = async (sessionId, segmentName, sourceUpdates) => {
-    try {
-      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/sources`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ source_updates: sourceUpdates })
-      });
-
-      if (response.ok) {
-        await loadSession(sessionId, segmentName);
-      }
-    } catch (error) {
-      console.error('Failed to update source selection:', error);
-      setError('Failed to update source selection');
-    }
-  };
-
-  const analyzeSelectedSources = async (sessionId, segmentName) => {
-    setActiveSessions(prev => ({ ...prev, [segmentName]: 'analyzing' }));
-
-    try {
-      const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}/analyze`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `HTTP ${response.status}`);
-      }
-
-      // Reload session to get analysis results
-      await loadSession(sessionId, segmentName);
-
-    } catch (error) {
-      console.error('Failed to analyze sources:', error);
-      setError(`Failed to analyze sources: ${error.message}`);
-      setActiveSessions(prev => ({ ...prev, [segmentName]: 'search_complete' }));
-    }
-  };
-
-  const showSessionHistory = (segmentName) => {
-    setSelectedSegment(segmentName);
-    setSessionDialogOpen(true);
-  };
-
+  // Simplified card for the main dashboard view
   const renderSessionCard = (segment) => {
     const session = sessions[segment.name];
     const status = activeSessions[segment.name];
-    const hasSession = !!session;
 
     return (
-        <Grid item xs={12} md={6} key={segment.name}>
-          <Card sx={{
-            height: '100%',
-            border: `2px solid ${
-                status === 'complete' ? CustomColors.SecretGarden :
-                    status ? CustomColors.DeepSkyBlue :
-                        CustomColors.UIGrey300
-            }`
-          }}>
-            <CardContent>
-              <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
-                <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
-                  {segment.name}
-                </Typography>
-                <Stack direction="row" spacing={1}>
+        <Card sx={{ height: '100%' }}>
+          <CardContent sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+            <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
+              {segment.name}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" mt={1} mb={2}>
+              {segment.description}
+            </Typography>
 
-                  <IconButton size="small" onClick={() => showSessionHistory(segment.name)}>
-                    <HistoryIcon />
-                  </IconButton>
-                </Stack>
-              </Box>
+            <Box sx={{ flexGrow: 1 }} />
 
-              <Typography variant="body2" color="text.secondary" mb={1}>
-                {segment.description}
-              </Typography>
+            <Divider sx={{ my: 2 }} />
 
-              {/* Display Research Focus */}
-              <Accordion sx={{ boxShadow: 'none', my: 2, bgcolor: CustomColors.UIGrey100 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="caption" fontWeight={FontWeight.Medium}>Research Focus</Typography>
-                </AccordionSummary>
-                <AccordionDetails sx={{ pt: 0 }}>
-                  <Typography variant="caption" color="text.secondary">
-                    {segment.research_focus}
-                  </Typography>
-                </AccordionDetails>
-              </Accordion>
-
-              {/* Session Status & Progress */}
-              {hasSession && (
-                  <Paper elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.AliceBlue }}>
-                    <Typography variant="subtitle2" mb={1} fontWeight={FontWeight.Medium}>
-                      Session Progress:
-                    </Typography>
-                    <Box display="flex" alignItems="center" gap={2} mb={1}>
-                      <Typography variant="body2" color="primary" fontWeight={FontWeight.Medium}>
-                        {getStatusDisplay(status)}
-                      </Typography>
-                      {isStatusActive(status) && <CircularProgress size={16} />}
-                    </Box>
-
-                    {/* Progress Stats */}
-                    <Stack direction="row" spacing={2}>
-                      <Box>
-                        <Typography variant="h6" color="primary" fontWeight={FontWeight.Bold}>
-                          {session.stats?.queries_generated || 0}
-                        </Typography>
-                        <Typography variant="caption">Queries</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="h6" color="success.main" fontWeight={FontWeight.Bold}>
-                          {session.stats?.sources_found || 0}
-                        </Typography>
-                        <Typography variant="caption">Sources</Typography>
-                      </Box>
-                      <Box>
-                        <Typography variant="h6" color="secondary.main" fontWeight={FontWeight.Bold}>
-                          {session.stats?.themes_generated || 0}
-                        </Typography>
-                        <Typography variant="caption">Themes</Typography>
-                      </Box>
-                    </Stack>
-                  </Paper>
+            <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Button
+                  variant="contained"
+                  color="primary"
+                  onClick={() => handleStartOrViewSession(segment)}
+              >
+                {session ? 'View Session' : 'Start Research'}
+              </Button>
+              {session && (
+                  <Chip
+                      label={status === 'complete' ? 'Complete' : 'In Progress'}
+                      color={status === 'complete' ? 'success' : 'secondary'}
+                      size="small"
+                      variant="outlined"
+                  />
               )}
-
-              {/* Session Workflow Steps */}
-              {hasSession && renderSessionWorkflow(session, segment.name, status)}
-
-              {/* Action Buttons */}
-              <Divider sx={{ my: 2 }} />
-              <Box display="flex" justifyContent="space-between" alignItems="center">
-                {!hasSession ? (
-                    <Button
-                        variant="contained"
-                        color="primary"
-                        onClick={() => createNewSession(segment)}
-                        disabled={loading}
-                        startIcon={<PsychologyIcon />}
-                    >
-                      Start New Research
-                    </Button>
-                ) : (
-                    renderActionButton(session, segment.name, status)
-                )}
-
-                {hasSession && session.updatedAt && (
-                    <Typography variant="caption" color="text.secondary">
-                      Updated: {new Date(session.updatedAt.seconds * 1000).toLocaleString()}
-                    </Typography>
-                )}
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
+            </Box>
+          </CardContent>
+        </Card>
     );
   };
 
-  const renderSessionWorkflow = (session, segmentName, status) => {
-    const { queries = [], searchResults = [], themes = [] } = session;
-
-    return (
-        <Box mb={2}>
-          {/* Step 1: Query Generation & Selection */}
-          {queries.length > 0 && (
-              <Accordion defaultExpanded={status === 'queries_ready'}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                    <SearchIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                    Generated Queries ({queries.length})
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  <List dense>
-                    {queries.map((query, idx) => (
-                        <ListItem key={query.id} sx={{ px: 0 }}>
-                          <FormControlLabel
-                              control={
-                                <Checkbox
-                                    checked={query.selected}
-                                    onChange={(e) => {
-                                      const updates = [{
-                                        id: query.id,
-                                        selected: e.target.checked
-                                      }];
-                                      updateQuerySelection(session.sessionId, segmentName, updates);
-                                    }}
-                                    disabled={status !== 'queries_ready'}
-                                />
-                              }
-                              label={
-                                <Typography variant="body2">
-                                  {idx + 1}. {query.text}
-                                </Typography>
-                              }
-                          />
-                        </ListItem>
-                    ))}
-                  </List>
-                </AccordionDetails>
-              </Accordion>
-          )}
-
-          {/* Step 2: Search Results & Source Selection */}
-          {searchResults.length > 0 && (
-              <Accordion defaultExpanded={status === 'search_complete'} sx={{ mt: 1 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                    <LinkIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                    Search Results ({getTotalSources(searchResults)} sources)
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  {searchResults.map((result, idx) => (
-                      <Box key={idx} mb={2}>
-                        <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
-                          Query: {result.query}
-                        </Typography>
-                        <List dense>
-                          {result.sources?.map((source) => (
-                              <ListItem key={source.id} sx={{ px: 0 }}>
-                                <FormControlLabel
-                                    control={
-                                      <Checkbox
-                                          checked={source.selected}
-                                          onChange={(e) => {
-                                            const updates = [{
-                                              id: source.id,
-                                              selected: e.target.checked
-                                            }];
-                                            updateSourceSelection(session.sessionId, segmentName, updates);
-                                          }}
-                                          disabled={status !== 'search_complete'}
-                                      />
-                                    }
-                                    label={
-                                      <Box>
-                                        <Typography variant="body2" fontWeight={FontWeight.Medium}>
-                                          {source.title}
-                                        </Typography>
-                                        <Typography
-                                            variant="caption"
-                                            sx={{
-                                              cursor: 'pointer',
-                                              color: CustomColors.DeepSkyBlue,
-                                              display: 'block'
-                                            }}
-                                            onClick={() => window.open(source.url, '_blank')}
-                                        >
-                                          {source.url}
-                                        </Typography>
-                                      </Box>
-                                    }
-                                />
-                              </ListItem>
-                          ))}
-                        </List>
-                      </Box>
-                  ))}
-                </AccordionDetails>
-              </Accordion>
-          )}
-
-          {/* Step 3: Analysis Results */}
-          {themes.length > 0 && (
-              <Accordion defaultExpanded={status === 'complete'} sx={{ mt: 1 }}>
-                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                  <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                    <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle', fontSize: 16 }} />
-                    Content Themes ({themes.length})
-                  </Typography>
-                </AccordionSummary>
-                <AccordionDetails>
-                  {themes.map((theme, idx) => (
-                      <Paper key={idx} elevation={0} sx={{ p: 2, mb: 2, bgcolor: CustomColors.UIGrey100 }}>
-                        <Typography variant="subtitle2" fontWeight={FontWeight.Medium} mb={1}>
-                          {theme.theme}
-                        </Typography>
-                        <Typography variant="body2" mb={1}>
-                          {theme.key_insight}
-                        </Typography>
-                        {theme.why_smbs_care && (
-                            <Typography variant="caption" color="text.secondary" display="block" mb={1}>
-                              Why SMBs care: {theme.why_smbs_care}
-                            </Typography>
-                        )}
-                        {theme.linkedin_angle && (
-                            <Typography variant="caption" color="primary" display="block">
-                              LinkedIn angle: {theme.linkedin_angle}
-                            </Typography>
-                        )}
-                      </Paper>
-                  ))}
-                </AccordionDetails>
-              </Accordion>
-          )}
-        </Box>
-    );
-  };
-
-  const renderActionButton = (session, segmentName, status) => {
-    switch (status) {
-      case 'generating':
-        return (
-            <Button disabled startIcon={<CircularProgress size={16} />}>
-              Generating Queries...
-            </Button>
-        );
-
-      case 'queries_ready':
-        const selectedQueries = session.queries?.filter(q => q.selected) || [];
-        return (
-            <Button
-                variant="contained"
-                color="primary"
-                onClick={() => searchSelectedQueries(session.sessionId, segmentName)}
-                disabled={selectedQueries.length === 0}
-                startIcon={<SearchIcon />}
-            >
-              Search ({selectedQueries.length} queries)
-            </Button>
-        );
-
-      case 'searching':
-        return (
-            <Button disabled startIcon={<CircularProgress size={16} />}>
-              Searching...
-            </Button>
-        );
-
-      case 'search_complete':
-        const selectedSources = getSelectedSources(session.searchResults || []);
-        return (
-            <Button
-                variant="contained"
-                color="secondary"
-                onClick={() => analyzeSelectedSources(session.sessionId, segmentName)}
-                disabled={selectedSources.length === 0}
-                startIcon={<PsychologyIcon />}
-            >
-              Analyze ({selectedSources.length} sources)
-            </Button>
-        );
-
-      case 'analyzing':
-        return (
-            <Button disabled startIcon={<CircularProgress size={16} />}>
-              Analyzing...
-            </Button>
-        );
-
-      case 'complete':
-        return (
-            <Button
-                variant="outlined"
-                color="primary"
-                onClick={() => createNewSession(segmentName)}
-                startIcon={<PsychologyIcon />}
-            >
-              Start New Session
-            </Button>
-        );
-
-      default:
-        return (
-            <Button
-                variant="contained"
-                color="primary"
-                onClick={() => createNewSession(segmentName)}
-                startIcon={<PsychologyIcon />}
-            >
-              Start Session
-            </Button>
-        );
-    }
-  };
-
-  // Helper functions
-  const getStatusDisplay = (status) => {
-    const statusMap = {
-      'generating': 'Generating Queries',
-      'queries_ready': 'Ready to Search',
-      'searching': 'Searching Sources',
-      'search_complete': 'Ready to Analyze',
-      'analyzing': 'Analyzing Content',
-      'complete': 'Analysis Complete'
-    };
-    return statusMap[status] || 'Unknown';
-  };
-
-  const isStatusActive = (status) => {
-    return ['generating', 'searching', 'analyzing'].includes(status);
-  };
-
-  const getTotalSources = (searchResults) => {
-    return searchResults.reduce((total, result) => total + (result.sources?.length || 0), 0);
-  };
-
-  const getSelectedSources = (searchResults) => {
-    const sources = [];
-    searchResults.forEach(result => {
-      result.sources?.forEach(source => {
-        if (source.selected) sources.push(source);
-      });
-    });
-    return sources;
-  };
 
   return (
       <Box>
-        {/* Header */}
+        {/* Header and Breadcrumbs */}
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box>
             <Typography variant="h5" component="h1" fontWeight={FontWeight.Bold}>
               Intelligence Engine
             </Typography>
-            <Typography variant="body2" color="text.secondary">
-              AI research with dynamic query generation and source analysis
-            </Typography>
+            <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} sx={{ mt: 1 }}>
+              <Link
+                  underline="hover"
+                  color={activeSegment ? "primary" : "text.primary"}
+                  href="#"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    if(activeSegment) {
+                      handleReturnToDashboard();
+                    }
+                  }}
+              >
+                Dashboard
+              </Link>
+              {activeSegment && <Typography color="text.primary">{activeSegment.name}</Typography>}
+            </Breadcrumbs>
           </Box>
         </Box>
 
@@ -601,31 +140,18 @@ const IntelligenceDashboard = () => {
             </Alert>
         )}
 
-
-        {/* Segment Cards */}
-        {config && (
+        {/* Conditional Rendering: Show Dashboard or Session Workflow */}
+        {activeSegment ? (
+            <SessionWorkflow
+                key={activeSegment.name}
+                segment={activeSegment}
+                onComplete={handleReturnToDashboard}
+            />
+        ) : (
             <Grid container spacing={3}>
-              {config.monthly_run?.segments?.map(renderSessionCard)}
+              {config?.monthly_run?.segments?.map(renderSessionCard)}
             </Grid>
         )}
-
-        {/* Session History Dialog */}
-        <Dialog
-            open={sessionDialogOpen}
-            onClose={() => setSessionDialogOpen(false)}
-            maxWidth="md"
-            fullWidth
-        >
-          <DialogTitle>Session History - {selectedSegment}</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" color="text.secondary">
-              Session history functionality coming soon...
-            </Typography>
-          </DialogContent>
-          <DialogActions>
-            <Button onClick={() => setSessionDialogOpen(false)}>Close</Button>
-          </DialogActions>
-        </Dialog>
       </Box>
   );
 };

@@ -25,7 +25,7 @@ import {
   Analytics as AnalyticsIcon,
   CheckCircle as CheckCircleIcon
 } from '@mui/icons-material';
-import { CustomColors, FontWeight } from '../../../theme';
+import { CustomColors, FontWeight } from '../../theme';
 
 const SearchResults = ({ sessionId, onSearchComplete }) => {
   const [sessionData, setSessionData] = useState(null);

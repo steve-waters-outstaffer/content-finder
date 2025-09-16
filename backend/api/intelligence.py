@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from flask import Blueprint, request, jsonify
 from dotenv import load_dotenv
+import google.generativeai as genai
 
 # Add backend directory to path to allow imports from sibling directories
 import sys

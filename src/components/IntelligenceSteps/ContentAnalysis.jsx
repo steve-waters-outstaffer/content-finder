@@ -28,7 +28,7 @@ import {
   CheckCircle as CheckCircleIcon,
   Link as LinkIcon
 } from '@mui/icons-material';
-import { CustomColors, FontWeight } from '../../../theme';
+import { CustomColors, FontWeight } from '../../theme';
 
 const ContentAnalysis = ({ sessionId, onAnalysisComplete }) => {
   const [sessionData, setSessionData] = useState(null);

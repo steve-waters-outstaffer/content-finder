@@ -44,6 +44,9 @@ const ContentFinder = () => {
     const [processingStatus, setProcessingStatus] = useState({}); // Track individual URL status
     const [sourceRatings, setSourceRatings] = useState({}); // Track source ratings
     const [contentRatings, setContentRatings] = useState({}); // Track content ratings
+    const [selectedUrls, setSelectedUrls] = useState(new Set());
+    const [isSynthesizing, setIsSynthesizing] = useState(false);
+    const [synthesisResult, setSynthesisResult] = useState(null);
 
     // Curated search terms for quick selection
     const curatedTerms = [
@@ -62,10 +65,12 @@ const ContentFinder = () => {
         setIsLoading(true);
         setError('');
         setResults(null);
-        setProcessedResults({}); // Clear previous processed results
+        setProcessedResults({});
+        setSelectedUrls(new Set());
+        setSynthesisResult(null);
+
 
         try {
-            // Only search, don't run full pipeline
             const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/search', {
                 method: 'POST',
                 headers: {
@@ -83,7 +88,6 @@ const ContentFinder = () => {
 
             const searchData = await response.json();
 
-            // Structure results to match expected format
             setResults({
                 query: searchQuery,
                 steps: {
@@ -119,7 +123,7 @@ const ContentFinder = () => {
                 {label}:
             </Typography>
             <Box sx={{ display: 'flex', gap: 0.2 }}>
-                {[1,2,3,4,5].map(star => (
+                {[1, 2, 3, 4, 5].map(star => (
                     <Typography
                         key={star}
                         onClick={() => onRate(star)}
@@ -144,65 +148,40 @@ const ContentFinder = () => {
     );
 
     const handleProcessUrl = async (url) => {
-        if (processingUrls.has(url)) return; // Already processing
+        if (processingUrls.has(url)) return;
 
         setProcessingUrls(prev => new Set([...prev, url]));
         setProcessingStatus(prev => ({ ...prev, [url]: 'scraping' }));
         setError('');
 
         try {
-            // Step 1: Scrape the URL
-            console.log(`🔄 Processing: ${url}`);
-
             const scrapeResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/scrape', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    urls: [url]
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: [url] })
             });
 
-            if (!scrapeResponse.ok) {
-                throw new Error(`Scraping failed: ${scrapeResponse.status}`);
-            }
-
+            if (!scrapeResponse.ok) throw new Error(`Scraping failed: ${scrapeResponse.status}`);
             const scrapeData = await scrapeResponse.json();
             const scrapeResult = scrapeData.results[0];
+            if (!scrapeResult.success) throw new Error(scrapeResult.error || 'Scraping failed');
 
-            if (!scrapeResult.success) {
-                throw new Error(scrapeResult.error || 'Scraping failed');
-            }
-
-            console.log(`✅ Scraped: ${url}`);
             setProcessingStatus(prev => ({ ...prev, [url]: 'analyzing' }));
 
-            // Step 2: Analyze the content if scraping succeeded
             let analysisResult = null;
             if (scrapeResult.markdown) {
-                console.log(`🤖 Analyzing: ${url}`);
-
                 const analysisResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/analyze', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        content: scrapeResult.markdown
-                    })
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: scrapeResult.markdown })
                 });
 
                 if (analysisResponse.ok) {
                     analysisResult = await analysisResponse.json();
                     analysisResult.source_url = url;
-                    console.log(`✅ Analyzed: ${url}`);
-                } else {
-                    console.warn(`⚠️ Analysis failed for: ${url}`);
                 }
             }
 
-            // Store the results
             setProcessedResults(prev => ({
                 ...prev,
                 [url]: {
@@ -211,17 +190,11 @@ const ContentFinder = () => {
                     processedAt: new Date().toISOString()
                 }
             }));
-
             setProcessingStatus(prev => ({ ...prev, [url]: 'completed' }));
-
         } catch (err) {
-            console.error(`❌ Failed to process ${url}:`, err);
             setProcessedResults(prev => ({
                 ...prev,
-                [url]: {
-                    error: err.message,
-                    processedAt: new Date().toISOString()
-                }
+                [url]: { error: err.message, processedAt: new Date().toISOString() }
             }));
             setProcessingStatus(prev => ({ ...prev, [url]: 'error' }));
         } finally {
@@ -233,109 +206,90 @@ const ContentFinder = () => {
         }
     };
 
-    const handleUrlSelection = (url, checked) => {
-        const newSelected = new Set(selectedUrls);
-        if (checked) {
-            newSelected.add(url);
+    const handleUrlSelection = (url, isSelected) => {
+        const newSelectedUrls = new Set(selectedUrls);
+        if (isSelected) {
+            newSelectedUrls.add(url);
         } else {
-            newSelected.delete(url);
+            newSelectedUrls.delete(url);
         }
-        setSelectedUrls(newSelected);
+        setSelectedUrls(newSelectedUrls);
     };
 
-    const handleSelectAll = (checked) => {
-        if (checked && results?.steps?.search?.results) {
-            const allUrls = new Set(results.steps.search.results.map(r => r.url));
-            setSelectedUrls(allUrls);
-        } else {
-            setSelectedUrls(new Set());
-        }
-    };
-
-    const handleProcessSelected = async () => {
+    const handleSynthesizeSelected = async () => {
         if (selectedUrls.size === 0) {
-            setError('Please select URLs to process');
+            setError('Please select at least one article to synthesize.');
             return;
         }
 
-        setIsProcessingSelected(true);
+        setIsSynthesizing(true);
         setError('');
+        setSynthesisResult(null);
 
         try {
-            const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/scrape', {
+            const scrapeResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/scrape', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                    urls: Array.from(selectedUrls)
-                })
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ urls: Array.from(selectedUrls) }),
             });
 
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
+            if (!scrapeResponse.ok) throw new Error('Failed to scrape content for synthesis.');
+
+            const scrapeData = await scrapeResponse.json();
+            const successfulScrapes = scrapeData.results.filter(r => r.success && r.markdown);
+
+            if (successfulScrapes.length === 0) {
+                throw new Error('Could not retrieve content from any of the selected URLs.');
             }
 
-            const scrapeData = await response.json();
+            const synthesisResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/synthesize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    query: searchQuery,
+                    contents: successfulScrapes.map(s => ({
+                        url: s.url,
+                        title: s.title,
+                        markdown: s.markdown
+                    }))
+                }),
+            });
 
-            // Update results with new scrape data
-            setResults(prev => ({
-                ...prev,
-                steps: {
-                    ...prev.steps,
-                    scrape: scrapeData.results,
-                    analyze: [] // Clear previous analysis
-                }
-            }));
+            if (!synthesisResponse.ok) throw new Error('The AI failed to synthesize the article.');
 
-            // Now analyze the scraped content
-            const analyses = [];
-            for (const result of scrapeData.results.filter(r => r.success && r.markdown)) {
-                const analysisResponse = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/analyze', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        content: result.markdown
-                    })
-                });
-
-                if (analysisResponse.ok) {
-                    const analysisData = await analysisResponse.json();
-                    analysisData.source_url = result.url;
-                    analyses.push(analysisData);
-                }
-            }
-
-            // Update with analysis results
-            setResults(prev => ({
-                ...prev,
-                steps: {
-                    ...prev.steps,
-                    analyze: analyses
-                }
-            }));
+            const synthesisData = await synthesisResponse.json();
+            setSynthesisResult(synthesisData);
 
         } catch (err) {
-            setError(`Failed to process selected URLs: ${err.message}`);
+            setError(`Synthesis failed: ${err.message}`);
         } finally {
-            setIsProcessingSelected(false);
+            setIsSynthesizing(false);
         }
     };
 
+
     const renderSearchResults = () => {
         if (!results?.steps?.search?.results) return null;
-
         const searchResults = results.steps.search.results;
 
         return (
             <Card sx={{ mb: 2 }}>
                 <CardContent>
-                    <Typography variant="h6" gutterBottom>
-                        <SearchIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                        Search Results ({searchResults.length} found)
-                    </Typography>
+                    <Box display="flex" justifyContent="space-between" alignItems="center" mb={2}>
+                        <Typography variant="h6" gutterBottom>
+                            <SearchIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                            Search Results ({searchResults.length} found)
+                        </Typography>
+                        <Button
+                            variant="contained"
+                            color="secondary"
+                            disabled={selectedUrls.size === 0 || isSynthesizing}
+                            onClick={handleSynthesizeSelected}
+                            startIcon={isSynthesizing ? <CircularProgress size={16} /> : <PsychologyIcon />}
+                        >
+                            {isSynthesizing ? 'Synthesizing...' : `Synthesize (${selectedUrls.size}) Articles`}
+                        </Button>
+                    </Box>
 
                     {searchResults.map((result, index) => {
                         const isProcessing = processingUrls.has(result.url);
@@ -350,93 +304,77 @@ const ContentFinder = () => {
                                 sx={{
                                     p: 2,
                                     mb: 1,
-                                    border: `2px solid ${
-                                        hasBeenProcessed
-                                            ? (processedData.error ? CustomColors.DarkRed : CustomColors.SecretGarden)
-                                            : CustomColors.UIGrey300
-                                    }`,
+                                    border: `2px solid ${hasBeenProcessed ? (processedData.error ? CustomColors.DarkRed : CustomColors.SecretGarden) : CustomColors.UIGrey300}`,
                                     borderRadius: 2,
                                     backgroundColor: 'white'
                                 }}
                             >
-                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <Box sx={{ display: 'flex', alignItems: 'flex-start' }}>
+                                    <Checkbox
+                                        checked={selectedUrls.has(result.url)}
+                                        onChange={(e) => handleUrlSelection(result.url, e.target.checked)}
+                                        sx={{ mt: 1.5, mr: 1 }}
+                                    />
                                     <Box sx={{ flex: 1 }}>
-                                        <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
-                                            {result.title || `Search Result ${index + 1}`}
-                                        </Typography>
-                                        <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
-                                            {result.description || 'No description available'}
-                                        </Typography>
-                                        <Typography
-                                            variant="caption"
-                                            sx={{
-                                                color: CustomColors.DeepSkyBlue,
-                                                textDecoration: 'underline',
-                                                cursor: 'pointer'
-                                            }}
-                                            onClick={() => window.open(result.url, '_blank')}
-                                        >
-                                            <LinkIcon sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'middle' }} />
-                                            {result.url}
-                                        </Typography>
-
-                                        {/* Source Quality Rating - Always Shown */}
-                                        <Box sx={{ mt: 1 }}>
-                                            {renderStarRating(
-                                                sourceRatings[result.url],
-                                                (rating) => handleSourceRating(result.url, rating),
-                                                'Source Quality'
-                                            )}
-                                        </Box>
-
-                                        {/* Show detailed processing status */}
-                                        {(isProcessing || hasBeenProcessed) && (
-                                            <Box sx={{ mt: 1 }}>
-                                                {isProcessing && (
-                                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                                                        <CircularProgress size={16} />
-                                                        <Typography variant="caption" color="primary">
-                                                            {currentStatus === 'scraping' && '📄 Scraping content...'}
-                                                            {currentStatus === 'analyzing' && '🤖 Analyzing with AI...'}
-                                                        </Typography>
-                                                    </Box>
-                                                )}
-
-                                                {hasBeenProcessed && !isProcessing && (
-                                                    <Box>
-                                                        {processedData.error ? (
-                                                            <Typography variant="caption" color="error">
-                                                                ❌ Failed: {processedData.error}
-                                                            </Typography>
-                                                        ) : (
-                                                            <Typography variant="caption" color="success.main">
-                                                                ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} |
-                                                                Analyzed {processedData.analysis?.success ? '✓' : '✗'}
-                                                            </Typography>
+                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                            <Box sx={{ flex: 1 }}>
+                                                <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
+                                                    {result.title || `Search Result ${index + 1}`}
+                                                </Typography>
+                                                <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+                                                    {result.description || 'No description available'}
+                                                </Typography>
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{ color: CustomColors.DeepSkyBlue, textDecoration: 'underline', cursor: 'pointer' }}
+                                                    onClick={() => window.open(result.url, '_blank')}
+                                                >
+                                                    <LinkIcon sx={{ fontSize: 14, mr: 0.5, verticalAlign: 'middle' }} />
+                                                    {result.url}
+                                                </Typography>
+                                                <Box sx={{ mt: 1 }}>
+                                                    {renderStarRating(sourceRatings[result.url], (rating) => handleSourceRating(result.url, rating), 'Source Quality')}
+                                                </Box>
+                                                {(isProcessing || hasBeenProcessed) && (
+                                                    <Box sx={{ mt: 1 }}>
+                                                        {isProcessing && (
+                                                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                                                <CircularProgress size={16} />
+                                                                <Typography variant="caption" color="primary">
+                                                                    {currentStatus === 'scraping' && '📄 Scraping content...'}
+                                                                    {currentStatus === 'analyzing' && '🤖 Analyzing with AI...'}
+                                                                </Typography>
+                                                            </Box>
+                                                        )}
+                                                        {hasBeenProcessed && !isProcessing && (
+                                                            <Box>
+                                                                {processedData.error ? (
+                                                                    <Typography variant="caption" color="error">
+                                                                        ❌ Failed: {processedData.error}
+                                                                    </Typography>
+                                                                ) : (
+                                                                    <Typography variant="caption" color="success.main">
+                                                                        ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} | Analyzed {processedData.analysis?.success ? '✓' : '✗'}
+                                                                    </Typography>
+                                                                )}
+                                                            </Box>
                                                         )}
                                                     </Box>
                                                 )}
                                             </Box>
-                                        )}
-                                    </Box>
-
-                                    <Box sx={{ ml: 2 }}>
-                                        <Button
-                                            variant={hasBeenProcessed ? "outlined" : "contained"}
-                                            color={hasBeenProcessed ? "secondary" : "primary"}
-                                            size="small"
-                                            onClick={() => handleProcessUrl(result.url)}
-                                            disabled={isProcessing}
-                                            sx={{ minWidth: 100 }}
-                                        >
-                                            {isProcessing ? (
-                                                currentStatus === 'scraping' ? 'Scraping...' : 'Analyzing...'
-                                            ) : hasBeenProcessed ? (
-                                                processedData.error ? 'Retry' : 'Reprocess'
-                                            ) : (
-                                                'Process'
-                                            )}
-                                        </Button>
+                                            <Box sx={{ ml: 2 }}>
+                                                <Button
+                                                    variant={hasBeenProcessed ? "outlined" : "contained"}
+                                                    color={hasBeenProcessed ? "secondary" : "primary"}
+                                                    size="small"
+                                                    onClick={() => handleProcessUrl(result.url)}
+                                                    disabled={isProcessing}
+                                                    sx={{ minWidth: 100 }}
+                                                >
+                                                    {isProcessing ? (currentStatus === 'scraping' ? 'Scraping...' : 'Analyzing...') : hasBeenProcessed ? (processedData.error ? 'Retry' : 'Reprocess') : ('Process')}
+                                                </Button>
+                                            </Box>
+                                        </Box>
                                     </Box>
                                 </Box>
                             </Paper>
@@ -448,18 +386,14 @@ const ContentFinder = () => {
     };
 
     const renderAnalysis = () => {
-        const analysisEntries = Object.entries(processedResults).filter(([url, data]) =>
-            data.analysis?.success && !data.error
-        );
-
+        const analysisEntries = Object.entries(processedResults).filter(([, data]) => data.analysis?.success && !data.error);
         if (analysisEntries.length === 0) return null;
-
         return (
             <Card sx={{ mb: 2 }}>
                 <CardContent>
                     <Typography variant="h6" gutterBottom>
                         <PsychologyIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                        AI Analysis ({analysisEntries.length} insights)
+                        Individual AI Analysis ({analysisEntries.length} insights)
                     </Typography>
                     {analysisEntries.map(([url, data], index) => (
                         <Accordion key={url} defaultExpanded sx={{ mb: 1 }}>
@@ -472,70 +406,24 @@ const ContentFinder = () => {
                                 </Typography>
                             </AccordionSummary>
                             <AccordionDetails sx={{ pt: 0 }}>
-                                {/* AI Insights - Primary Content */}
                                 <Accordion defaultExpanded sx={{ mb: 1, boxShadow: 'none' }}>
-                                    <AccordionSummary
-                                        expandIcon={<ExpandMoreIcon />}
-                                        sx={{
-                                            bgcolor: CustomColors.AliceBlue,
-                                            borderRadius: 1,
-                                            mb: 1,
-                                            '&.Mui-expanded': { minHeight: 48 }
-                                        }}
-                                    >
-                                        <Typography variant="body2" fontWeight={FontWeight.SemiBold}>
-                                            📄 AI Insights
-                                        </Typography>
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: CustomColors.AliceBlue, borderRadius: 1, mb: 1, '&.Mui-expanded': { minHeight: 48 } }}>
+                                        <Typography variant="body2" fontWeight={FontWeight.SemiBold}>📄 AI Insights</Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                        <Box sx={{
-                                            bgcolor: CustomColors.UIGrey100,
-                                            p: 2,
-                                            borderRadius: 1,
-                                            whiteSpace: 'pre-wrap',
-                                            mb: 2
-                                        }}>
-                                            <Typography variant="body2">
-                                                {data.analysis.analysis}
-                                            </Typography>
+                                        <Box sx={{ bgcolor: CustomColors.UIGrey100, p: 2, borderRadius: 1, whiteSpace: 'pre-wrap', mb: 2 }}>
+                                            <Typography variant="body2">{data.analysis.analysis}</Typography>
                                         </Box>
-
-                                        {/* Content Rating */}
-                                        {renderStarRating(
-                                            contentRatings[url],
-                                            (rating) => handleContentRating(url, rating),
-                                            'Analysis Usefulness'
-                                        )}
+                                        {renderStarRating(contentRatings[url], (rating) => handleContentRating(url, rating), 'Analysis Usefulness')}
                                     </AccordionDetails>
                                 </Accordion>
-
-                                {/* Source Content - Secondary, Collapsed */}
                                 <Accordion sx={{ boxShadow: 'none' }}>
-                                    <AccordionSummary
-                                        expandIcon={<ExpandMoreIcon />}
-                                        sx={{
-                                            bgcolor: CustomColors.UIGrey200,
-                                            borderRadius: 1
-                                        }}
-                                    >
-                                        <Typography variant="body2" fontWeight={FontWeight.Medium}>
-                                            📋 Source Content ({data.scrape.markdown?.length || 0} chars)
-                                        </Typography>
+                                    <AccordionSummary expandIcon={<ExpandMoreIcon />} sx={{ bgcolor: CustomColors.UIGrey200, borderRadius: 1 }}>
+                                        <Typography variant="body2" fontWeight={FontWeight.Medium}>📋 Source Content ({data.scrape.markdown?.length || 0} chars)</Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                        <Typography variant="body2" sx={{
-                                            maxHeight: '300px',
-                                            overflow: 'auto',
-                                            bgcolor: CustomColors.UIGrey100,
-                                            p: 2,
-                                            borderRadius: 1,
-                                            fontSize: '12px',
-                                            color: CustomColors.UIGrey600
-                                        }}>
-                                            {data.scrape.markdown ?
-                                                data.scrape.markdown.substring(0, 2000) + (data.scrape.markdown.length > 2000 ? '...' : '') :
-                                                'No content available'
-                                            }
+                                        <Typography variant="body2" sx={{ maxHeight: '300px', overflow: 'auto', bgcolor: CustomColors.UIGrey100, p: 2, borderRadius: 1, fontSize: '12px', color: CustomColors.UIGrey600 }}>
+                                            {data.scrape.markdown ? data.scrape.markdown.substring(0, 2000) + (data.scrape.markdown.length > 2000 ? '...' : '') : 'No content available'}
                                         </Typography>
                                     </AccordionDetails>
                                 </Accordion>
@@ -547,45 +435,36 @@ const ContentFinder = () => {
         );
     };
 
-    const renderScrapedContent = () => {
-        const scrapeResults = results?.steps?.scrape?.filter(r => r.success) || [];
-        if (scrapeResults.length === 0) return null;
+    const renderSynthesisResult = () => {
+        if (!synthesisResult) return null;
 
         return (
-            <Card sx={{ mb: 2 }}>
+            <Card sx={{ mb: 3 }}>
                 <CardContent>
-                    <Typography variant="h6" gutterBottom>
+                    <Typography variant="h5" gutterBottom>
                         <AssignmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                        Scraped Content ({scrapeResults.length} articles)
+                        Synthesized Research Article
                     </Typography>
-                    {scrapeResults.map((result, index) => (
-                        <Accordion key={index} sx={{ mb: 1 }}>
-                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-                                <Box>
-                                    <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>
-                                        {result.title || `Article ${index + 1}`}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary" display="block">
-                                        {result.url}
-                                    </Typography>
-                                </Box>
-                            </AccordionSummary>
-                            <AccordionDetails>
-                                <Typography variant="body2" sx={{
-                                    maxHeight: '200px',
-                                    overflow: 'auto',
-                                    bgcolor: CustomColors.UIGrey100,
-                                    p: 2,
-                                    borderRadius: 1
-                                }}>
-                                    {result.markdown ?
-                                        result.markdown.substring(0, 1000) + (result.markdown.length > 1000 ? '...' : '') :
-                                        'No content available'
-                                    }
+                    <Paper elevation={0} sx={{ p: 3, mb: 3, bgcolor: CustomColors.UIGrey100, whiteSpace: 'pre-wrap' }}>
+                        <Typography variant="body1">
+                            {synthesisResult.article}
+                        </Typography>
+                    </Paper>
+
+                    {/* New Section for Outstaffer Analysis */}
+                    {synthesisResult.outstaffer_analysis && (
+                        <>
+                            <Typography variant="h6" gutterBottom>
+                                <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                                Outstaffer Strategic Insights
+                            </Typography>
+                            <Paper elevation={0} sx={{ p: 3, bgcolor: CustomColors.AliceBlue, whiteSpace: 'pre-wrap' }}>
+                                <Typography variant="body2">
+                                    {synthesisResult.outstaffer_analysis}
                                 </Typography>
-                            </AccordionDetails>
-                        </Accordion>
-                    ))}
+                            </Paper>
+                        </>
+                    )}
                 </CardContent>
             </Card>
         );
@@ -593,17 +472,14 @@ const ContentFinder = () => {
 
     return (
         <Box sx={{ maxWidth: '100%' }}>
-            {/* Search Interface */}
             <Card sx={{ mb: 3 }}>
                 <CardContent>
                     <Typography variant="h5" gutterBottom fontWeight={FontWeight.SemiBold}>
                         Content Pipeline
                     </Typography>
-                    <Typography variant="body" color="text.secondary" sx={{ mb: 3 }}>
-                        Search, scrape, and analyse content for recruitment and EOR industry insights
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                        Search, scrape, and analyze content for recruitment and EOR industry insights.
                     </Typography>
-
-                    {/* Search Input */}
                     <Box sx={{ display: 'flex', gap: 2, mb: 2, mt: 2 }}>
                         <TextField
                             fullWidth
@@ -638,8 +514,6 @@ const ContentFinder = () => {
                             {isLoading ? <CircularProgress size={24} color="inherit" /> : 'Search'}
                         </Button>
                     </Box>
-
-                    {/* Curated Terms */}
                     <Box sx={{ mb: 2 }}>
                         <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
                             Quick searches:
@@ -668,7 +542,6 @@ const ContentFinder = () => {
                             ))}
                         </Box>
                     </Box>
-
                     {error && (
                         <Alert severity="error" sx={{ mt: 2 }}>
                             {error}
@@ -677,10 +550,8 @@ const ContentFinder = () => {
                 </CardContent>
             </Card>
 
-            {/* Results Section */}
             {results && (
                 <Box>
-                    {/* Summary Stats */}
                     <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: CustomColors.AliceBlue }}>
                         <Typography variant="h6" gutterBottom>
                             <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
@@ -697,18 +568,18 @@ const ContentFinder = () => {
                                 <Typography variant="h4" color="success.main" fontWeight={FontWeight.Bold}>
                                     {Object.values(processedResults).filter(data => data.scrape?.success && !data.error).length}
                                 </Typography>
-                                <Typography variant="caption">Successfully Scraped</Typography>
+                                <Typography variant="caption">Individually Scraped</Typography>
                             </Box>
                             <Box>
                                 <Typography variant="h4" color="secondary.main" fontWeight={FontWeight.Bold}>
-                                    {Object.values(processedResults).filter(data => data.analysis?.success && !data.error).length}
+                                    {synthesisResult ? 1 : 0}
                                 </Typography>
-                                <Typography variant="caption">AI Analyses Generated</Typography>
+                                <Typography variant="caption">Synthesized Articles</Typography>
                             </Box>
                         </Stack>
                     </Paper>
 
-                    {/* Results Sections */}
+                    {renderSynthesisResult()}
                     {renderSearchResults()}
                     {renderAnalysis()}
                 </Box>
