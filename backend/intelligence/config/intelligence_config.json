@@ -4,74 +4,28 @@
     "time_filter": "qdr:m",
     "search_sources": ["web", "news"]
   },
-  "segments": {
-    "smb_leaders": {
-      "name": "SMB Leaders",
-      "prompt_file": "segment_smb_leaders.json",
-      "searches": [
-        {
-          "query": "SMB hiring challenges 2025 recruitment pain points",
-          "sources": ["web", "news"],
-          "priority": "high"
-        },
-        {
-          "query": "startup founder recruiting difficulties small business",
-          "sources": ["web"]
-        },
-        {
-          "query": "site:linkedin.com/business/talent-solutions hiring trends SMB",
-          "sources": ["web"]
-        },
-        {
-          "query": "site:reddit.com/r/recruitinghell pain points interview process",
-          "sources": ["web"]
-        }
-      ]
-    },
-    "enterprise_hr": {
-      "name": "Enterprise HR",
-      "prompt_file": "segment_enterprise_hr.json",
-      "searches": [
-        {
-          "query": "enterprise talent acquisition trends 2025 HR technology",
-          "sources": ["web", "news"],
-          "priority": "high"
-        },
-        {
-          "query": "recruiting technology ROI large companies HRIS",
-          "sources": ["web"]
-        },
-        {
-          "query": "site:shrm.org recruiting effectiveness TA challenges",
-          "sources": ["web"]
-        },
-        {
-          "query": "site:fishbowlapp.com recruiter sentiment enterprise hiring",
-          "sources": ["web"]
-        }
-      ]
-    },
-    "australian_developers": {
-      "name": "Australian Developers",
-      "prompt_file": "segment_australian_developers.json",
-      "searches": [
-        {
-          "query": "Australian software developer challenges 2025",
-          "sources": ["web", "news"],
-          "location": "Australia",
-          "priority": "medium"
-        },
-        {
-          "query": "Australia developer tools frameworks trending",
-          "sources": ["web"],
-          "location": "Australia"
-        },
-        {
-          "query": "site:reddit.com/r/ausdev career tools frustrations",
-          "sources": ["web"]
-        }
-      ]
-    }
+  "monthly_run": {
+    "scrape_top": 5,
+    "segments": [
+      {
+        "name": "SMB Leaders",
+        "description": "Founders, COOs, and Hiring Managers at growing SMBs",
+        "research_focus": "Map current hiring trends, cost benchmarks, process efficiency tips, skills shortage solutions, and common mistakes for SMBs without in-house recruiters. Focus on actionable insights for LinkedIn content from the last 12 months.",
+        "content_goal": "LinkedIn posts targeting SMB decision makers"
+      },
+      {
+        "name": "Enterprise HR",
+        "description": "Talent Acquisition Managers and HR Directors",
+        "research_focus": "Investigate enterprise TA trends, technology adoption, and strategic challenges for HR leadership at large companies.",
+        "content_goal": "Strategic insights for HR leadership"
+      },
+      {
+        "name": "Australian Developers",
+        "description": "Software developers and tech companies in Australia",
+        "research_focus": "Identify the top pain points, preferred tools, and career challenges for software developers in the Australian market.",
+        "content_goal": "Content for Australian developer community"
+      }
+    ]
   },
   "brand_monitoring": {
     "enabled": true,

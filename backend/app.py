@@ -18,7 +18,7 @@ def create_app():
     app.config['JSON_SORT_KEYS'] = False
     
     # Enable CORS for React frontend
-    CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173"])
+    CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://content-finder-4bf70.web.app"])
     
     # Register blueprints
     app.register_blueprint(search_bp, url_prefix='/api')

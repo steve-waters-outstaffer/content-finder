@@ -27,17 +27,13 @@ import {
   DialogContent,
   DialogActions,
   TextField
-} from '@mui/material';
-import {
-  ExpandMore as ExpandMoreIcon,
-  TrendingUp as TrendingUpIcon,
-  Psychology as PsychologyIcon,
-  Search as SearchIcon,
-  Link as LinkIcon,
-  Assignment as AssignmentIcon,
-  History as HistoryIcon,
-  Edit as EditIcon
-} from '@mui/icons-material';
+}from '@mui/material';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import PsychologyIcon from '@mui/icons-material/Psychology';
+import SearchIcon from '@mui/icons-material/Search';
+import LinkIcon from '@mui/icons-material/Link';
+import HistoryIcon from '@mui/icons-material/History';
 import { CustomColors, FontWeight } from '../../theme';
 
 const IntelligenceDashboard = () => {
@@ -71,22 +67,21 @@ const IntelligenceDashboard = () => {
     }
   };
 
-  const createNewSession = async (segmentName) => {
-    const segment = config?.monthly_run?.segments?.find(s => s.name === segmentName);
+  const createNewSession = async (segment) => {
     if (!segment) return;
 
-    setActiveSessions(prev => ({ ...prev, [segmentName]: 'generating' }));
+    setActiveSessions(prev => ({ ...prev, [segment.name]: 'generating' }));
     setError('');
 
     try {
-      console.log(`🚀 Creating new session for: ${segmentName}`);
+      console.log(`🚀 Creating new session for: ${segment.name}`);
 
       const response = await fetch('https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          segment_name: segmentName,
-          mission: segment.research_focus
+          segment_name: segment.name,
+          mission: segment.research_focus // Pass the research_focus as the mission
         })
       });
 
@@ -100,22 +95,23 @@ const IntelligenceDashboard = () => {
       // Store the session data
       setSessions(prev => ({
         ...prev,
-        [segmentName]: {
+        [segment.name]: {
           ...result.session,
           sessionId: result.session_id
         }
       }));
 
-      setActiveSessions(prev => ({ ...prev, [segmentName]: result.session.status }));
+      setActiveSessions(prev => ({ ...prev, [segment.name]: result.session.status }));
 
-      console.log(`✅ Session created for: ${segmentName} (ID: ${result.session_id})`);
+      console.log(`✅ Session created for: ${segment.name} (ID: ${result.session_id})`);
 
     } catch (error) {
-      console.error(`Failed to create session for ${segmentName}:`, error);
-      setError(`Failed to create session for ${segmentName}: ${error.message}`);
-      setActiveSessions(prev => ({ ...prev, [segmentName]: null }));
+      console.error(`Failed to create session for ${segment.name}:`, error);
+      setError(`Failed to create session for ${segment.name}: ${error.message}`);
+      setActiveSessions(prev => ({ ...prev, [segment.name]: null }));
     }
   };
+
 
   const loadSession = async (sessionId, segmentName) => {
     try {
@@ -246,9 +242,21 @@ const IntelligenceDashboard = () => {
                 </Stack>
               </Box>
 
-              <Typography variant="body2" color="text.secondary" mb={2}>
+              <Typography variant="body2" color="text.secondary" mb={1}>
                 {segment.description}
               </Typography>
+
+              {/* Display Research Focus */}
+              <Accordion sx={{ boxShadow: 'none', my: 2, bgcolor: CustomColors.UIGrey100 }}>
+                <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                  <Typography variant="caption" fontWeight={FontWeight.Medium}>Research Focus</Typography>
+                </AccordionSummary>
+                <AccordionDetails sx={{ pt: 0 }}>
+                  <Typography variant="caption" color="text.secondary">
+                    {segment.research_focus}
+                  </Typography>
+                </AccordionDetails>
+              </Accordion>
 
               {/* Session Status & Progress */}
               {hasSession && (
@@ -297,7 +305,7 @@ const IntelligenceDashboard = () => {
                     <Button
                         variant="contained"
                         color="primary"
-                        onClick={() => createNewSession(segment.name)}
+                        onClick={() => createNewSession(segment)}
                         disabled={loading}
                         startIcon={<PsychologyIcon />}
                     >

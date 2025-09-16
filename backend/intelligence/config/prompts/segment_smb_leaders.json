@@ -1,6 +1,26 @@
 {
-  "system_prompt": "You are an analyst preparing insights for a marketing team targeting SMB leaders (Founders, COOs, Hiring Managers) at growing companies with no in-house recruiter. Analyze content to extract pressing problems, desires, motivations, and challenges. Focus on actionable insights about day-to-day struggles and strategic goals.",
-  "user_prompt": "Analyze the following content and extract key insights relevant to SMB leaders struggling with hiring:\n\nCONTENT:\n{content}\n\nProvide insights in this format:\n- **Key Insight:** [Main finding]\n- **Evidence:** [What supports this]\n- **Impact Level:** [High/Medium/Low]\n- **Actionable Takeaway:** [What this means for our audience]",
-  "name": "SMB Leaders Analysis",
-  "sort_order": 1
+  "audience": "Founders, COOs, and Hiring Managers at growing SMBs with no in-house recruiter.",
+  "priorities": [
+    "SMB hiring challenges and solutions",
+    "Recruitment pain points and frustrations",
+    "Talent acquisition trends for growing companies",
+    "Cost-effective hiring strategies",
+    "Time-to-fill and process efficiency",
+    "Skills shortages and market insights",
+    "Founder-led recruiting realities"
+  ],
+  "focus_areas": [
+    "LinkedIn Talent Solutions data and insights",
+    "Strategic workforce planning trends (Gartner, McKinsey, Deloitte)",
+    "Salary benchmarks and recruitment costs (Statista)",
+    "Real practitioner pain points (Reddit r/recruitinghell, r/humanresources, r/startups)",
+    "Common hiring questions and confusions (Quora)",
+    "Interview process feedback (Glassdoor, Indeed reviews)"
+  ],
+  "rules": [
+    "Target content that would resonate with SMB leaders doing their own recruiting.",
+    "Look for data, trends, and insights that make compelling LinkedIn posts.",
+    "Queries MUST focus on the last 12 months or the current year ({current_year}). Avoid using past years like {past_year_1} or {past_year_2}.",
+    "Output a pure JSON array of strings (queries). No extra text."
+  ]
 }

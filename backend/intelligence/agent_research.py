@@ -21,168 +21,89 @@ load_dotenv()
 
 class AgentResearcher:
     """Agent-based research engine using Tavily + Firecrawl + Gemini"""
-    
+
     def __init__(self):
-        print(f"DEBUG: Initializing AgentResearcher...")
+        # (Initialization code remains the same...)
         self.gemini_key = os.getenv("GEMINI_API_KEY")
-        self.tavily_key = os.getenv("TAVILY_API_KEY") 
+        self.tavily_key = os.getenv("TAVILY_API_KEY")
         self.firecrawl_key = os.getenv("FIRECRAWL_API_KEY")
-        
-        print(f"DEBUG: API Keys loaded - Gemini: {bool(self.gemini_key)}, Tavily: {bool(self.tavily_key)}, Firecrawl: {bool(self.firecrawl_key)}")
-        print(f"DEBUG: Gemini key starts with: {self.gemini_key[:10] if self.gemini_key else 'None'}...")
-        print(f"DEBUG: Tavily key starts with: {self.tavily_key[:10] if self.tavily_key else 'None'}...")
-        print(f"DEBUG: Firecrawl key starts with: {self.firecrawl_key[:10] if self.firecrawl_key else 'None'}...")
-        
+
         if not all([self.gemini_key, self.tavily_key, self.firecrawl_key]):
             raise RuntimeError("Missing required API keys: GEMINI_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY")
-        
-        print(f"DEBUG: Configuring Gemini...")
+
         genai.configure(api_key=self.gemini_key)
-        print(f"DEBUG: Initializing Firecrawl...")
         self.firecrawl = AsyncFirecrawl(api_key=self.firecrawl_key)
-        print(f"DEBUG: Creating Gemini models...")
         self.planner = genai.GenerativeModel("gemini-1.5-flash")
         self.synthesizer = genai.GenerativeModel("gemini-1.5-pro")
-        print(f"DEBUG: AgentResearcher initialized successfully")
-    
-    def get_segment_prompts(self, segment_name: str) -> Dict[str, str]:
-        """Get planner and synthesis prompts based on segment"""
-        
-        if "smb" in segment_name.lower() or "leaders" in segment_name.lower():
-            return {
-                "planner": """You are a research planner for LinkedIn content creation.
-Turn ONE mission into 8-12 crisp, web-ready queries.
 
-Audience: Founders, COOs, and Hiring Managers at growing SMBs with no in-house recruiter.
+    def get_planner_prompt(self, segment_name: str) -> str:
+        """Constructs the planner prompt from a base template and segment-specific config."""
+        try:
+            current_year = datetime.now().year
+            config_dir = Path(__file__).parent / 'config' / 'prompts'
 
-Prioritise:
-- SMB hiring challenges and solutions
-- Recruitment pain points and frustrations  
-- Talent acquisition trends for growing companies
-- Cost-effective hiring strategies
-- Time-to-fill and process efficiency
-- Skills shortages and market insights
-- Founder-led recruiting realities
+            # 1. Load the base template
+            with open(config_dir / 'planner_base.txt', 'r') as f:
+                base_template = f.read()
 
-Focus Areas:
-- LinkedIn Talent Solutions data and insights
-- Strategic workforce planning trends (Gartner, McKinsey, Deloitte)
-- Salary benchmarks and recruitment costs (Statista)
-- Real practitioner pain points (Reddit r/recruitinghell, r/humanresources, r/startups)
-- Common hiring questions and confusions (Quora)
-- Interview process feedback (Glassdoor, Indeed reviews)
+            # 2. Load the segment-specific details
+            segment_file = f"planner_{segment_name.lower().replace(' ', '_')}.json"
+            with open(config_dir / segment_file, 'r') as f:
+                segment_config = json.load(f)
 
-Rules:
-- Target content that would resonate with SMB leaders doing their own recruiting
-- Look for data, trends, and insights that make compelling LinkedIn posts
-- Prefer recent data (last 12 months) for relevance
-- Output a pure JSON array of strings (queries). No extra text.""",
+            # 3. Format the lists from the config into bullet points
+            priorities_str = "\n".join([f"- {item}" for item in segment_config.get("priorities", [])])
+            focus_areas_str = "\n".join([f"- {item}" for item in segment_config.get("focus_areas", [])])
 
-                "synthesis": """You synthesise insights for LinkedIn content targeting SMB hiring leaders.
-Given docs[] (title, url, passages[], published_at, domain), produce:
-- 5-8 CONTENT THEMES perfect for LinkedIn posts
-- For each theme: key insight, supporting data/metrics, why SMBs should care, 1-2 compelling quotes with citations [n]
-- Focus on actionable, shareable insights that founders/COOs would engage with
+            # Inject current year into rules that need it
+            rules_list = []
+            for rule in segment_config.get("rules", []):
+                formatted_rule = rule.format(
+                    current_year=current_year,
+                    past_year_1=current_year - 1,
+                    past_year_2=current_year - 2
+                )
+                rules_list.append(f"- {formatted_rule}")
+            rules_str = "\n".join(rules_list)
 
-Target Audience: Founders, COOs, and Hiring Managers at growing SMBs without in-house recruiters.
+            # 4. Populate the template with the details
+            prompt = base_template.format(
+                current_year=current_year,
+                audience=segment_config.get("audience", ""),
+                priorities=priorities_str,
+                focus_areas=focus_areas_str,
+                rules=rules_str
+            )
+            return prompt
 
-Content Themes Should Cover:
-- Hiring process efficiency and speed
-- Cost-effective recruitment strategies  
-- Skills shortage solutions
-- Market salary benchmarks and trends
-- Common hiring mistakes to avoid
-- Technology and tools for SMB recruiting
-- Workforce planning for growth
-- Competitor hiring insights
+        except FileNotFoundError:
+            # Fallback to a generic prompt if a specific config doesn't exist
+            print(f"Warning: No specific planner config found for '{segment_name}'. Using default.")
+            return f"You are a research planner. The current year is {datetime.now().year}. Turn the mission into 8-12 web-ready search queries. Focus on recent data. Output a pure JSON array of strings."
+        except Exception as e:
+            print(f"Error loading planner prompt for {segment_name}: {e}")
+            return f"You are a research planner. Turn the mission into 8-12 web-ready search queries."
 
-Constraints:
-- Only cite URLs we actually saw in docs
-- Prioritise data and metrics that make compelling LinkedIn posts
-- Focus on pain points SMB leaders actually face
-- Keep insights practical and immediately actionable
-
-Output JSON with keys:
-{
-  "content_themes": [
-    { 
-      "theme": "", 
-      "key_insight": "", 
-      "supporting_data": [], 
-      "why_smbs_care": "", 
-      "linkedin_angle": "",
-      "evidence": [ { "quote": "", "url": "" } ] 
-    }
-  ],
-  "brief_markdown": "## LinkedIn Content Brief\\n"
-}"""
-            }
-        
-        # Default prompts for other segments
-        return {
-            "planner": """You are a research planner for content creation.
-Turn ONE mission into 8-12 crisp, web-ready queries for your target audience.
-
-Rules:
-- Make queries specific and web-searchable
-- Focus on recent trends and data (last 12 months)
-- Target pain points and actionable insights
-- Output a pure JSON array of strings (queries). No extra text.""",
-
-            "synthesis": """You synthesise insights for content creation.
-Given docs[] (title, url, passages[], published_at, domain), produce actionable insights.
-
-Output JSON with keys:
-{
-  "content_themes": [
-    { 
-      "theme": "", 
-      "key_insight": "", 
-      "supporting_data": [], 
-      "evidence": [ { "quote": "", "url": "" } ] 
-    }
-  ],
-  "brief_markdown": "## Content Brief\\n"
-}"""
-        }
 
     async def plan_queries(self, mission: str, segment_name: str, max_queries: int = 10) -> List[str]:
         """Use Gemini to generate focused queries for the mission"""
-        print(f"DEBUG: Planning queries for mission: '{mission}'")
-        print(f"DEBUG: Gemini API key present: {bool(self.gemini_key and self.gemini_key != 'placeholder_key')}")
-        
-        prompts = self.get_segment_prompts(segment_name)
-        prompt = f"{prompts['planner']}\n\nMission: {mission}\nReturn at most {max_queries} queries."
-        
+        planner_prompt = self.get_planner_prompt(segment_name)
+        full_prompt = f"{planner_prompt}\n\nMission: {mission}\nReturn at most {max_queries} queries."
+
         try:
-            print(f"DEBUG: Calling Gemini for query planning...")
-            resp = self.planner.generate_content(prompt)
-            print(f"DEBUG: Gemini response received, parsing JSON...")
-            print(f"DEBUG: Raw Gemini response: {resp.text[:200]}...")
-            
-            # Clean the response - remove markdown code blocks if present
-            response_text = resp.text.strip()
-            if response_text.startswith('```json'):
-                response_text = response_text[7:]  # Remove ```json
-            if response_text.startswith('```'):
-                response_text = response_text[3:]   # Remove ```
-            if response_text.endswith('```'):
-                response_text = response_text[:-3]  # Remove trailing ```
-            response_text = response_text.strip()
-            
-            print(f"DEBUG: Cleaned response: {response_text[:200]}...")
-            
+            resp = self.planner.generate_content(full_prompt)
+
+            # Clean the response - remove markdown code blocks
+            response_text = resp.text.strip().replace('```json', '').replace('```', '').strip()
+
             queries = json.loads(response_text)
             if not isinstance(queries, list):
                 raise ValueError("Planner did not return a list")
-            
-            filtered_queries = [q for q in queries if isinstance(q, str)][:max_queries]
-            print(f"DEBUG: Successfully parsed {len(filtered_queries)} queries")
-            return filtered_queries
+
+            return [q for q in queries if isinstance(q, str)][:max_queries]
         except Exception as e:
-            print(f"DEBUG: Query planning failed: {e}")
-            print(f"DEBUG: Falling back to original mission as query")
-            return [mission]  # Fallback to original mission
+            print(f"Query planning failed: {e}")
+            return [mission] # Fallback to original mission
 
     async def tavily_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         """Search with Tavily API"""
