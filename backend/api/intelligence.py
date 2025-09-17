@@ -192,16 +192,30 @@ def get_session(session_id):
 def update_queries(session_id):
     """Update query selections"""
     try:
-        data = request.get_json()
-        query_updates = data.get('query', [])
+        data = request.get_json() or {}
+        query_updates = data.get('queries')
+        if query_updates is None:
+            # Backwards compatibility with earlier payload shape
+            query_updates = data.get('query', [])
+
+        if not isinstance(query_updates, list):
+            return jsonify({'error': 'Invalid payload: "queries" must be a list'}), 400
+
         session = sessions.get(session_id)
         if not session:
             return jsonify({'error': 'Session not found'}), 404
 
         for update in query_updates:
+            update_id = update.get('id')
+            if not update_id:
+                continue
+
             for query in session['queries']:
-                if query['id'] == update['id']:
-                    query['selected'] = update['selected']
+                if query['id'] == update_id:
+                    if 'selected' in update:
+                        query['selected'] = bool(update['selected'])
+                    if 'text' in update and isinstance(update['text'], str):
+                        query['text'] = update['text']
 
         session['updatedAt'] = datetime.now().isoformat()
         return jsonify({'success': True})
@@ -255,8 +269,15 @@ def search_queries(session_id):
 def update_sources(session_id):
     """Update source selections"""
     try:
-        data = request.get_json()
-        source_updates = data.get('source_updates', [])
+        data = request.get_json() or {}
+        source_updates = data.get('sources')
+        if source_updates is None:
+            # Backwards compatibility with earlier payload shape
+            source_updates = data.get('source_updates', [])
+
+        if not isinstance(source_updates, list):
+            return jsonify({'error': 'Invalid payload: "sources" must be a list'}), 400
+
         session = sessions.get(session_id)
         if not session:
             return jsonify({'error': 'Session not found'}), 404
@@ -264,8 +285,10 @@ def update_sources(session_id):
         for search_result in session['searchResults']:
             for source in search_result['sources']:
                 for update in source_updates:
-                    if source['id'] == update['id']:
-                        source['selected'] = update['selected']
+                    update_id = update.get('id')
+                    if update_id and source['id'] == update_id:
+                        if 'selected' in update:
+                            source['selected'] = bool(update['selected'])
 
         session['updatedAt'] = datetime.now().isoformat()
         return jsonify({'success': True})
