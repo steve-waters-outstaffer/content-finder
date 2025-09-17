@@ -193,7 +193,7 @@ def update_queries(session_id):
     """Update query selections"""
     try:
         data = request.get_json()
-        query_updates = data.get('query_updates', [])
+        query_updates = data.get('query', [])
         session = sessions.get(session_id)
         if not session:
             return jsonify({'error': 'Session not found'}), 404

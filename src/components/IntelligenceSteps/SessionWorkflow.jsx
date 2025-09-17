@@ -247,13 +247,6 @@ const SessionWorkflow = ({ segment, onComplete }) => {
               </Step>
           ))}
         </Stepper>
-
-        {/* Current Step Content (when not using stepper content) */}
-        {activeStep >= 0 && (
-            <Paper elevation={0} sx={{ p: 3, bgcolor: CustomColors.UIGrey50 }}>
-              {renderStepContent(activeStep)}
-            </Paper>
-        )}
       </Box>
   );
 };
