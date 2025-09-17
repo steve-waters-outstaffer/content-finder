@@ -48,10 +48,6 @@ const ContentAnalysis = ({ sessionId, onAnalysisComplete }) => {
       if (response.ok) {
         const data = await response.json();
         setSessionData(data);
-
-        if (data.status === 'complete' && onAnalysisComplete) {
-          onAnalysisComplete();
-        }
       }
     } catch (error) {
       console.error('Failed to load session:', error);

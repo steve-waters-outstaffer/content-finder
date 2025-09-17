@@ -52,10 +52,6 @@ const SearchResults = ({ sessionId, onSearchComplete }) => {
       if (response.ok) {
         const data = await response.json();
         setSessionData(data);
-
-        if (data.status === 'search_complete' && onSearchComplete) {
-          onSearchComplete();
-        }
       }
     } catch (error) {
       console.error('Failed to load session:', error);

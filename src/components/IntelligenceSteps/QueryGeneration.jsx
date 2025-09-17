@@ -46,10 +46,6 @@ const QueryGeneration = ({ sessionId, segment, onQueriesReady }) => {
         const data = await response.json();
         setSessionData(data);
         setQueries(data.queries || []);
-
-        if (data.status === 'queries_ready' && onQueriesReady) {
-          onQueriesReady();
-        }
       }
     } catch (error) {
       console.error('Failed to load session:', error);

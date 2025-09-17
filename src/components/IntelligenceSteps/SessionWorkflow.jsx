@@ -11,7 +11,7 @@ import {
   Alert,
   Chip,
   Stack,
-  CircularProgress
+  CircularProgress, Divider
 } from '@mui/material';
 import {
   Psychology as PsychologyIcon,
@@ -132,16 +132,32 @@ const SessionWorkflow = ({ segment, onComplete }) => {
   if (!sessionId) {
     return (
         <Box>
-          <Paper elevation={0} sx={{ p: 3, textAlign: 'center', bgcolor: CustomColors.AliceBlue }}>
-            <PsychologyIcon sx={{ fontSize: 48, color: CustomColors.DeepSkyBlue, mb: 2 }} />
-            <Typography variant="h6" mb={1}>
-              Start Intelligence Research
-            </Typography>
-            <Typography variant="body2" color="text.secondary" mb={1}>
-              Create a new research session for <strong>{segment.name}</strong>
-            </Typography>
-            <Typography variant="body2" color="text.secondary" mb={3}>
+          <Paper elevation={0} sx={{ p: 3, textAlign: 'left', bgcolor: CustomColors.AliceBlue }}>
+            <Box sx={{textAlign: 'center'}}>
+              <PsychologyIcon sx={{ fontSize: 48, color: CustomColors.DeepSkyBlue, mb: 2 }} />
+              <Typography variant="h6" mb={1}>
+                Start Intelligence Research
+              </Typography>
+              <Typography variant="body2" color="text.secondary" mb={2}>
+                Create a new research session for <strong>{segment.name}</strong>
+              </Typography>
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+
+            <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>Audience:</Typography>
+            <Typography variant="body2" color="text.secondary" mb={2}>
               {segment.description}
+            </Typography>
+
+            <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>Research Focus:</Typography>
+            <Typography variant="body2" color="text.secondary" mb={2}>
+              {segment.research_focus}
+            </Typography>
+
+            <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>Content Goal:</Typography>
+            <Typography variant="body2" color="text.secondary" mb={3}>
+              {segment.content_goal}
             </Typography>
 
             {error && (
