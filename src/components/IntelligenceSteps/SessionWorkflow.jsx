@@ -11,7 +11,9 @@ import {
   Alert,
   Chip,
   Stack,
-  CircularProgress, Divider
+  CircularProgress,
+  Divider,
+  TextField
 } from '@mui/material';
 import {
   Psychology as PsychologyIcon,
@@ -30,6 +32,7 @@ const SessionWorkflow = ({ segment, onComplete }) => {
   const [sessionId, setSessionId] = useState(null);
   const [creatingSession, setCreatingSession] = useState(false);
   const [error, setError] = useState('');
+  const [editableFocus, setEditableFocus] = useState(segment.research_focus || '');
 
   const steps = [
     {
@@ -59,7 +62,7 @@ const SessionWorkflow = ({ segment, onComplete }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           segment_name: segment.name,
-          mission: `Research current trends and insights for ${segment.name} audience. Focus on actionable content for last 12 months.`
+          mission: editableFocus
         })
       });
 
@@ -151,9 +154,15 @@ const SessionWorkflow = ({ segment, onComplete }) => {
             </Typography>
 
             <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>Research Focus:</Typography>
-            <Typography variant="body2" color="text.secondary" mb={2}>
-              {segment.research_focus}
-            </Typography>
+            <TextField
+                fullWidth
+                multiline
+                rows={4}
+                variant="outlined"
+                value={editableFocus}
+                onChange={(e) => setEditableFocus(e.target.value)}
+                sx={{ mb: 3, bgcolor: 'white' }}
+            />
 
             <Typography variant="subtitle2" fontWeight={FontWeight.Medium}>Content Goal:</Typography>
             <Typography variant="body2" color="text.secondary" mb={3}>
