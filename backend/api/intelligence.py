@@ -123,50 +123,30 @@ def search_with_tavily(query):
         print(f"Tavily search error: {e}")
         return {"results": []}
 
-def analyze_content_with_gemini(sources, segment_name):
-    """Analyze sources using Gemini AI (kept for the analyze_sources route)"""
-    # This function can be further improved to use the analysis prompts from the config files
-    # For now, it retains its original logic.
+def analyze_content_with_gemini(sources, segment):
+    """Analyze sources using Gemini AI using an external prompt template."""
     GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
     if not GEMINI_API_KEY:
         return [{'theme': 'Fallback Theme', 'key_insight': 'API key missing.'}]
 
-    # ... [original analyze_content_with_gemini logic remains here] ...
-    # This part is long, so I'm omitting it for brevity, but it should be the same as your original file.
-    # It starts with: try: content_snippets = [] ...
     try:
-        # Prepare content for analysis
-        content_snippets = []
-        for source in sources:
-            content_snippets.append(f"Title: {source.get('title', '')}\nURL: {source.get('url', '')}\nContent: {source.get('snippet', '')}")
+        content_snippets = [
+            f"Title: {source.get('title', '')}\nURL: {source.get('url', '')}\nContent: {source.get('snippet', '')}"
+            for source in sources
+        ]
+        combined_content = "\n\n---\n\n".join(content_snippets[:10])
 
-        combined_content = "\n\n---\n\n".join(content_snippets[:10])  # Limit to prevent token overflow
+        prompt_path = Path(__file__).parent.parent / 'intelligence' / 'config' / 'prompts' / 'synthesis_prompt.txt'
+        with open(prompt_path, 'r') as f:
+            prompt_template = f.read()
 
-        prompt = f"""
-Analyze the following web search results about {segment_name} and generate 3 LinkedIn content themes.
-Target Audience: {segment_name}
-Content Sources:
-{combined_content}
-For each theme, provide:
-1. Theme name (2-4 words)
-2. Key insight (one clear sentence)
-3. Why SMBs care (practical business reason)
-4. LinkedIn angle (how to position this for social content)
-Return your response in this exact JSON format:
-[
-  {{
-    "theme": "Theme Name",
-    "key_insight": "Main insight sentence",
-    "why_smbs_care": "Why this matters to small businesses",
-    "linkedin_angle": "How to frame this for LinkedIn content"
-  }}
-]
-Requirements:
-- Focus on actionable insights
-- Make themes relevant to current business challenges
-- Ensure LinkedIn angles are engaging and shareable
-- Return ONLY valid JSON, no other text
-"""
+        # MODIFICATION 2: Populate the template with both name and description
+        prompt = prompt_template.format(
+            segment_name=segment.get('name', 'Unknown Audience'),
+            segment_description=segment.get('description', 'No description provided.'),
+            combined_content=combined_content
+        )
+
         genai.configure(api_key=GEMINI_API_KEY)
         gemini_model = genai.GenerativeModel('gemini-1.5-flash')
         response = gemini_model.generate_content(prompt)
@@ -174,6 +154,7 @@ Requirements:
         if response.text:
             json_text = response.text.strip().replace('```json', '').replace('```', '').strip()
             return json.loads(json_text)
+
     except Exception as e:
         print(f"Gemini content analysis failed: {e}")
 
@@ -296,37 +277,3 @@ def update_sources(session_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-@intelligence_bp.route('/intelligence/sessions/<session_id>/analyze', methods=['POST'])
-def analyze_sources(session_id):
-    """Analyze selected sources and generate themes"""
-    try:
-        session = sessions.get(session_id)
-        if not session:
-            return jsonify({'error': 'Session not found'}), 404
-
-        session['status'] = 'analyzing'
-        selected_sources = [
-            source for res in session['searchResults'] for source in res['sources'] if source['selected']
-        ]
-
-        if not selected_sources:
-            return jsonify({'error': 'No sources selected'}), 400
-
-        themes = analyze_content_with_gemini(selected_sources, session['segmentName'])
-
-        session['themes'] = themes
-        session['status'] = 'complete'
-        session['stats']['themes_generated'] = len(themes)
-        session['stats']['sources_scraped'] = len(selected_sources) # Note: this is "analyzed" not "scraped"
-        session['updatedAt'] = datetime.now().isoformat()
-
-        return jsonify({
-            'success': True,
-            'sources_analyzed': len(selected_sources),
-            'themes_generated': len(themes)
-        })
-
-    except Exception as e:
-        if session:
-            session['status'] = 'search_complete'
-        return jsonify({'error': str(e)}), 500

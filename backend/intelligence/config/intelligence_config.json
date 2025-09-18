@@ -10,19 +10,19 @@
       {
         "name": "SMB Leaders",
         "description": "Founders, COOs, and Hiring Managers at growing SMBs",
-        "research_focus": "Map current hiring trends, cost benchmarks, process efficiency tips, skills shortage solutions, and common mistakes for SMBs without in-house recruiters. Focus on actionable insights for LinkedIn content from the last 12 months.",
+        "research_focus": "Investigate the challenges Australian SMBs face with local tech talent shortages and rising salary benchmarks. Map the cost-benefit analysis of hiring remote international talent versus local hires, and identify the most common mistakes founders make when trying to manage overseas compliance and payroll for the first time. The goal is to produce actionable LinkedIn content that helps SMB leaders make smarter, cost-effective hiring decisions over the next 12 months.",
         "content_goal": "LinkedIn posts targeting SMB decision makers"
       },
       {
         "name": "Enterprise HR",
         "description": "Talent Acquisition Managers and HR Directors",
-        "research_focus": "Investigate enterprise TA trends, technology adoption, and strategic challenges for HR leadership at large companies.",
+        "research_focus": "Analyze the strategic challenges for enterprise HR leaders in scaling global talent acquisition. Investigate the adoption of AI in recruitment to improve efficiency, and explore the complexities of managing a distributed workforce, including compliance, payroll, and the role of a unified HRIS. The goal is to uncover insights for strategic content aimed at senior HR professionals.",
         "content_goal": "Strategic insights for HR leadership"
       },
       {
         "name": "Australian Developers",
         "description": "Software developers and tech companies in Australia",
-        "research_focus": "Identify the top pain points, preferred tools, and career challenges for software developers in the Australian market.",
+        "research_focus": "Identify the primary motivations, career aspirations, and key challenges for senior software developers in Australia, particularly regarding remote and international work opportunities. Research their preferences for company culture, technology stacks, and what they value most from a modern employer. The goal is to generate insights that help companies attract and retain top Australian tech talent.",
         "content_goal": "Content for Australian developer community"
       }
     ]
