@@ -277,3 +277,73 @@ def update_sources(session_id):
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+# In backend/api/intelligence.py
+
+@intelligence_bp.route('/intelligence/sessions/<session_id>/analyze', methods=['POST'])
+def analyze_sources(session_id):
+    """
+    Scrapes selected sources and uses the AgentResearcher to analyze them and generate themes.
+    """
+    session = sessions.get(session_id)
+    if not session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    if not researcher:
+        return jsonify({'error': 'Intelligence agent is not available due to a configuration error.'}), 503
+
+    try:
+        session['status'] = 'analyzing'
+
+        selected_sources = []
+        for result in session.get('searchResults', []):
+            for source in result.get('sources', []):
+                if source.get('selected'):
+                    selected_sources.append(source)
+
+        if not selected_sources:
+            return jsonify({'error': 'No sources selected for analysis'}), 400
+
+        print(f"Scraping {len(selected_sources)} sources for analysis...")
+
+        # --- THIS IS THE FIX ---
+        # Manually manage the asyncio event loop for threads
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        scrape_tasks = [researcher.scrape_url(doc) for doc in selected_sources]
+        scraped_docs = loop.run_until_complete(asyncio.gather(*scrape_tasks))
+        loop.close()
+        # --- END OF FIX ---
+
+        successful_scrapes = [doc for doc in scraped_docs if doc.get('passages')]
+        scraped_count = len(successful_scrapes)
+        print(f"Successfully scraped {scraped_count}/{len(selected_sources)} sources.")
+
+        if not successful_scrapes:
+            raise Exception("Failed to scrape content from any of the selected sources.")
+
+        print("Synthesizing insights from scraped content...")
+        synthesis_result = asyncio.run(researcher.synthesize_insights(
+            mission=session['mission'],
+            segment_name=session['segmentName'],
+            docs=successful_scrapes
+        ))
+
+        themes = synthesis_result.get("content_themes", [])
+        session['themes'] = themes
+        session['status'] = 'complete'
+        session['stats']['sources_scraped'] = scraped_count
+        session['stats']['themes_generated'] = len(themes)
+        session['updatedAt'] = datetime.now().isoformat()
+
+        print(f"Analysis complete for session {session_id}. Generated {len(themes)} themes.")
+
+        return jsonify({'success': True, 'themes': themes})
+
+    except Exception as e:
+        if session:
+            session['status'] = 'search_complete'
+        print(f"Error during analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e)}), 500
