@@ -438,33 +438,86 @@ const ContentFinder = () => {
     const renderSynthesisResult = () => {
         if (!synthesisResult) return null;
 
+        // Helper function to render the LinkedIn post in a styled paper
+        const renderLinkedInPost = (post) => {
+            if (!post) return null;
+            return (
+                <Paper elevation={0} sx={{ p: 2, bgcolor: CustomColors.UIGrey100, mt: 1 }}>
+                    <Typography variant="subtitle2" fontWeight={FontWeight.SemiBold}>Angle: {post.angle}</Typography>
+                    <Divider sx={{ my: 1 }} />
+                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', my: 2 }}>{post.text}</Typography>
+                    <Typography variant="caption" color="text.secondary">{post.hashtags?.join(' ')}</Typography>
+                </Paper>
+            );
+        };
+
+        // Helper function to render the article and handle markdown titles
+        const renderArticle = (articleText) => {
+            if (!articleText) return <Typography>No article content available.</Typography>;
+
+            // Split article into paragraphs and render them, converting "## Title" to a heading
+            return articleText.split(/\\n\\n+/).map((paragraph, index) => {
+                if (paragraph.startsWith('## ')) {
+                    return <Typography key={index} variant="h5" sx={{ mt: 2, mb: 1 }}>{paragraph.replace('## ', '')}</Typography>
+                }
+                // Replace any other markdown for clean text
+                const cleanParagraph = paragraph.replace(/(\*\*|##)/g, '');
+                return <Typography key={index} paragraph>{cleanParagraph}</Typography>
+            });
+        };
+
         return (
             <Card sx={{ mb: 3 }}>
                 <CardContent>
-                    <Typography variant="h5" gutterBottom>
-                        <AssignmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                        Synthesized Research Article
-                    </Typography>
-                    <Paper elevation={0} sx={{ p: 3, mb: 3, bgcolor: CustomColors.UIGrey100, whiteSpace: 'pre-wrap' }}>
-                        <Typography variant="body1">
-                            {synthesisResult.article}
-                        </Typography>
-                    </Paper>
+                    {/* Accordion for the Synthesized Article */}
+                    <Accordion defaultExpanded>
+                        <AccordionSummary
+                            expandIcon={<ExpandMoreIcon />}
+                            sx={{ bgcolor: CustomColors.UIGrey100, borderRadius: 1 }}
+                        >
+                            <Typography variant="h6">
+                                <AssignmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                                Synthesized Research Article
+                            </Typography>
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 2 }}>
+                            {renderArticle(synthesisResult.article)}
+                        </AccordionDetails>
+                    </Accordion>
 
-                    {/* New Section for Outstaffer Analysis */}
-                    {synthesisResult.outstaffer_analysis && (
-                        <>
-                            <Typography variant="h6" gutterBottom>
+                    {/* Accordion for the Strategic Insights */}
+                    <Accordion defaultExpanded sx={{ mt: 2 }}>
+                        <AccordionSummary
+                            expandIcon={<ExpandMoreIcon />}
+                            sx={{ bgcolor: CustomColors.AliceBlue, borderRadius: 1 }}
+                        >
+                            <Typography variant="h6">
                                 <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
                                 Outstaffer Strategic Insights
                             </Typography>
-                            <Paper elevation={0} sx={{ p: 3, bgcolor: CustomColors.AliceBlue, whiteSpace: 'pre-wrap' }}>
-                                <Typography variant="body2">
-                                    {synthesisResult.outstaffer_analysis}
-                                </Typography>
-                            </Paper>
-                        </>
-                    )}
+                        </AccordionSummary>
+                        <AccordionDetails sx={{ pt: 2 }}>
+                            {synthesisResult.outstaffer_analysis && (
+                                <>
+                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>Relevance & Opportunity</Typography>
+                                    <Typography variant="body2" color="text.secondary" paragraph>
+                                        {synthesisResult.outstaffer_analysis.relevance_opportunity}
+                                    </Typography>
+
+                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>Key Talking Point</Typography>
+                                    <Typography variant="body2" color="text.secondary" paragraph>
+                                        {synthesisResult.outstaffer_analysis.key_talking_point}
+                                    </Typography>
+                                </>
+                            )}
+                            {synthesisResult.linkedin_post && (
+                                <>
+                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>LinkedIn Post Idea</Typography>
+                                    {renderLinkedInPost(synthesisResult.linkedin_post)}
+                                </>
+                            )}
+                        </AccordionDetails>
+                    </Accordion>
                 </CardContent>
             </Card>
         );

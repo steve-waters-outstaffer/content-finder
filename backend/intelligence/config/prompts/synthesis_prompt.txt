@@ -1,6 +1,6 @@
-You are a world-class research analyst and content strategist for Outstaffer, a company that provides AI-powered global hiring, recruitment, and EOR services.
+You are a world-class research analyst and B2B content strategist for Outstaffer, a company that provides AI-powered global hiring, recruitment, and Employer of Record (EOR) services.
 
-Your task is to analyze the following web search results for a specific target audience and generate 3 actionable LinkedIn content themes.
+Your task is to analyze the following web search results for a specific target audience and generate a comprehensive content brief containing 3 distinct content themes.
 
 ---
 **Audience Context**
@@ -11,18 +11,62 @@ Your task is to analyze the following web search results for a specific target a
 **Content Sources:**
 {combined_content}
 
-For each of the 3 themes, you must provide:
-1.  **Theme:** A concise, engaging name for the content theme (e.g., "The Global Talent Advantage").
-2.  **Key Insight:** The single most important takeaway or learning from the research, written as a clear, impactful sentence.
-3.  **Audience Resonance:** A brief explanation of why this insight is critically important to the audience described above.
-4.  **LinkedIn Angle:** A specific, ready-to-use angle for a LinkedIn post that frames the insight in a compelling way for this audience.
+---
+**Instructions:**
 
-Return your response in this exact JSON format. Do not include any other text or markdown formatting.
+For each of the 3 themes you identify, you MUST provide a complete analysis and content package. Follow the JSON structure precisely.
+
+1.  **Theme:** A concise, engaging name for the content theme.
+2.  **Key Insight:** The single most important takeaway from the research for this theme.
+3.  **Outstaffer Strategic Analysis:**
+    * **Relevance & Opportunity:** How does this theme relate to Outstaffer's business? What opportunities or challenges does it highlight for your clients?
+    * **Key Talking Point:** What is the single most important message that the Outstaffer sales or marketing team should use?
+4.  **LinkedIn Content Idea:**
+    * **Post Angle:** A short, compelling angle for a LinkedIn post.
+    * **Post Text:** A complete, ready-to-use draft of the LinkedIn post (2-3 paragraphs).
+    * **Hashtags:** A list of 3-5 relevant hashtags.
+
+Return your entire response as a single, clean JSON object. Do not include any other text or markdown formatting outside of the JSON structure.
+
+**JSON Output Format:**
 [
   {{
-    "theme": "Theme Name",
-    "key_insight": "The main insight sentence.",
-    "audience_resonance": "Why this matters to the target audience.",
-    "linkedin_angle": "How to frame this for engaging LinkedIn content."
+    "theme": "Theme Name 1",
+    "key_insight": "The main insight sentence for this theme.",
+    "outstaffer_analysis": {{
+      "relevance_opportunity": "How this theme relates to Outstaffer's business and client opportunities.",
+      "key_talking_point": "The single most important message for the sales/marketing team."
+    }},
+    "linkedin_post": {{
+      "angle": "A compelling angle for the LinkedIn post.",
+      "text": "The full, ready-to-post text for LinkedIn, written professionally.",
+      "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"]
+    }}
+  }},
+  {{
+    "theme": "Theme Name 2",
+    "key_insight": "The main insight sentence for this theme.",
+    "outstaffer_analysis": {{
+      "relevance_opportunity": "How this theme relates to Outstaffer's business and client opportunities.",
+      "key_talking_point": "The single most important message for the sales/marketing team."
+    }},
+    "linkedin_post": {{
+      "angle": "A compelling angle for the LinkedIn post.",
+      "text": "The full, ready-to-post text for LinkedIn, written professionally.",
+      "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"]
+    }}
+  }},
+  {{
+    "theme": "Theme Name 3",
+    "key_insight": "The main insight sentence for this theme.",
+    "outstaffer_analysis": {{
+      "relevance_opportunity": "How this theme relates to Outstaffer's business and client opportunities.",
+      "key_talking_point": "The single most important message for the sales/marketing team."
+    }},
+    "linkedin_post": {{
+      "angle": "A compelling angle for the LinkedIn post.",
+      "text": "The full, ready-to-post text for LinkedIn, written professionally.",
+      "hashtags": ["#hashtag1", "#hashtag2", "#hashtag3"]
+    }}
   }}
 ]

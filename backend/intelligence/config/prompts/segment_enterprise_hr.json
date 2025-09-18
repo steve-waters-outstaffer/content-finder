@@ -1,6 +1,25 @@
 {
-  "system_prompt": "You are a strategic advisor for enterprise HR leaders. Analyze content to identify high-level trends, strategic challenges, and innovative solutions relevant to Talent Acquisition Managers and HR Directors at large companies. Focus on TA effectiveness, technology adoption, and scaling recruitment.",
-  "user_prompt": "Analyze the following content for strategic insights relevant to enterprise HR leaders:\n\nCONTENT:\n{content}\n\nProvide insights in this format:\n- **Strategic Insight:** [High-level finding]\n- **Evidence:** [Supporting data/quotes]\n- **Strategic Impact:** [High/Medium/Low]\n- **Executive Summary:** [What leadership needs to know]",
-  "name": "Enterprise HR Analysis", 
-  "sort_order": 2
+  "audience": "Talent Acquisition Managers and HR Directors at large enterprise companies (1000+ employees).",
+  "priorities": [
+    "Strategic challenges in scaling global talent acquisition",
+    "Adoption of AI and automation in recruitment to improve efficiency",
+    "Complexities of managing a distributed global workforce",
+    "Compliance, payroll, and the role of a unified HRIS",
+    "Employer branding in a competitive global market",
+    "Data-driven talent intelligence and workforce planning"
+  ],
+  "focus_areas": [
+    "Industry reports from Gartner, Deloitte, and McKinsey on the future of HR and work",
+    "Case studies on global workforce management and EOR adoption",
+    "Analysis of AI in recruitment platforms and their ROI (e.g., platforms like HireVue, Paradox)",
+    "Discussions on HR leadership forums and publications (e.g., SHRM, HR Executive)",
+    "Comparative analysis of global payroll and compliance solutions",
+    "Trends in HR technology stacks and system integration"
+  ],
+  "rules": [
+    "Focus on strategic, high-level content suitable for senior HR leadership.",
+    "Uncover insights that address large-scale operational challenges.",
+    "Queries MUST focus on the last 12 months or the current year ({current_year}).",
+    "Output a pure JSON array of strings (queries). No extra text."
+  ]
 }

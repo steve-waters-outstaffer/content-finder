@@ -1,6 +1,23 @@
 {
-  "system_prompt": "You are an analyst preparing insights for a marketing team targeting Australian software developers and tech companies. Analyze content to extract developer pain points, tool preferences, career challenges, and technology trends specific to the Australian market.",
-  "user_prompt": "Analyze the following content and extract key insights relevant to Australian developers:\n\nCONTENT:\n{content}\n\nProvide insights in this format:\n- **Key Insight:** [Main finding]\n- **Evidence:** [What supports this]\n- **Impact Level:** [High/Medium/Low]\n- **Actionable Takeaway:** [What this means for our audience]",
-  "name": "Australian Developers Analysis",
-  "sort_order": 3
+  "audience": "Software developers and technology leaders at Australian tech companies.",
+  "priorities": [
+    "Developer career aspirations and motivations in Australia",
+    "Challenges faced by Australian developers (e.g., burnout, skill gaps)",
+    "Preferences for remote vs. in-office work and international opportunities",
+    "Valued aspects of company culture, management, and work-life balance",
+    "Opinions on modern technology stacks and preferred tools"
+  ],
+  "focus_areas": [
+    "Developer surveys and reports (Stack Overflow, JetBrains, GitHub Octoverse)",
+    "Discussions on Australian tech forums and communities (e.g., Reddit r/ausdev, Whirlpool)",
+    "Salary, compensation, and benefits benchmarks in the Australian market",
+    "Analysis of what makes a 'great' or 'toxic' tech employer in Australia (e.g., from Glassdoor reviews)",
+    "Trends in upskilling, continuous learning, and professional development for developers"
+  ],
+  "rules": [
+    "Target content that provides direct insight into the developer mindset and experience.",
+    "Look for recent discussions and data from the last 12-18 months.",
+    "Queries should uncover what attracts and retains top Australian tech talent.",
+    "Output a pure JSON array of strings (queries). No extra text."
+  ]
 }
