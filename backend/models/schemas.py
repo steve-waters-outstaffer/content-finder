@@ -42,7 +42,7 @@ class AnalysisResult:
     analyzed_at: str
     source_url: Optional[str] = None
     analysis: Optional[str] = None
-    model: str = "gemini-2.0-flash"
+    model: str = "gemini-2.5-flash"
     error: Optional[str] = None
 
 

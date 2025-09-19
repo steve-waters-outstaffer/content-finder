@@ -13,7 +13,8 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 import httpx
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 from firecrawl import AsyncFirecrawl
 
 # Load environment variables
@@ -30,10 +31,10 @@ class AgentResearcher:
         if not all([self.gemini_key, self.tavily_key, self.firecrawl_key]):
             raise RuntimeError("Missing required API keys: GEMINI_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY")
 
-        genai.configure(api_key=self.gemini_key)
         self.firecrawl = AsyncFirecrawl(api_key=self.firecrawl_key)
-        self.planner = genai.GenerativeModel("gemini-1.5-flash")
-        self.synthesizer = genai.GenerativeModel("gemini-1.5-pro")
+        self.client = genai.Client(api_key=self.gemini_key)
+        self.flash_model = os.getenv("MODEL", "gemini-2.5-flash")
+        self.pro_model = os.getenv("MODEL_PRO", "gemini-2.5-pro")
 
     def get_planner_prompt(self, segment_name: str) -> str:
         """Constructs the planner prompt from a base template and segment-specific config."""
@@ -97,8 +98,16 @@ class AgentResearcher:
         full_prompt = f"{planner_prompt}\n\nMission: {mission}\nReturn at most {max_queries} queries."
 
         try:
-            resp = self.planner.generate_content(full_prompt)
-            response_text = resp.text.strip().replace('```json', '').replace('```', '').strip()
+            resp = self.client.models.generate_content(
+                model=self.flash_model,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.3,
+                    max_output_tokens=1024,
+                ),
+            )
+            response_text = (resp.text or "").strip().replace('```json', '').replace('```', '').strip()
             queries = json.loads(response_text)
             if not isinstance(queries, list):
                 raise ValueError("Planner did not return a list")
@@ -192,8 +201,16 @@ class AgentResearcher:
         )
 
         try:
-            resp = self.synthesizer.generate_content(final_prompt)
-            text = resp.text.strip()
+            resp = self.client.models.generate_content(
+                model=self.pro_model,
+                contents=final_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    temperature=0.4,
+                    max_output_tokens=2048,
+                ),
+            )
+            text = (resp.text or "").strip()
 
             # Extract JSON array from the response
             json_match = re.search(r"\[\s*\{.*\}\s*\]", text, re.DOTALL)
