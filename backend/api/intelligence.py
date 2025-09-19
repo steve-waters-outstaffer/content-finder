@@ -6,9 +6,12 @@ import asyncio
 import requests
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
+
 from flask import Blueprint, request, jsonify
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # Add backend directory to path to allow imports from sibling directories
 import sys
@@ -18,6 +21,23 @@ from intelligence.agent_research import AgentResearcher
 
 # Load environment variables
 load_dotenv()
+
+DEFAULT_GEMINI_MODEL = os.getenv("MODEL", "gemini-2.5-flash")
+_genai_client: Optional[genai.Client] = None
+
+
+def _get_genai_client() -> Optional[genai.Client]:
+    """Lazily instantiate and return a Gemini SDK client."""
+    global _genai_client
+    if _genai_client is not None:
+        return _genai_client
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    _genai_client = genai.Client(api_key=api_key)
+    return _genai_client
 
 # Simple in-memory storage for sessions
 sessions = {}
@@ -125,8 +145,8 @@ def search_with_tavily(query):
 
 def analyze_content_with_gemini(sources, segment):
     """Analyze sources using Gemini AI using an external prompt template."""
-    GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-    if not GEMINI_API_KEY:
+    client = _get_genai_client()
+    if not client:
         return [{'theme': 'Fallback Theme', 'key_insight': 'API key missing.'}]
 
     try:
@@ -147,11 +167,17 @@ def analyze_content_with_gemini(sources, segment):
             combined_content=combined_content
         )
 
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-        response = gemini_model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=DEFAULT_GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.4,
+                max_output_tokens=2048,
+            ),
+        )
 
-        if response.text:
+        if response and response.text:
             json_text = response.text.strip().replace('```json', '').replace('```', '').strip()
             return json.loads(json_text)
 

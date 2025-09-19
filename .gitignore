@@ -16,6 +16,8 @@ firebase-debug.log
 
 # misc
 .DS_Store
+.pytest_cache/
+__pycache__/
 .env
 .env.local
 .env.development.local

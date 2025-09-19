@@ -54,6 +54,9 @@ pip install -r requirements.txt
 # Set environment variables
 export FIRECRAWL_API_KEY=your_firecrawl_key
 export GEMINI_API_KEY=your_gemini_key
+# Optional: override default Gemini models
+export MODEL=gemini-2.5-flash
+# export MODEL_PRO=gemini-2.5-pro
 ```
 
 ### Running the API Server
@@ -113,6 +116,8 @@ curl -X POST http://localhost:5000/api/pipeline \
 Environment variables:
 - `FIRECRAWL_API_KEY` - Required for search and scraping
 - `GEMINI_API_KEY` - Required for AI analysis
+- `MODEL` - Optional override for the default Gemini model (defaults to `gemini-2.5-flash`)
+- `MODEL_PRO` - Optional override for tasks that require `gemini-2.5-pro`
 - `FLASK_ENV` - Set to `development` for debug mode
 
 ## Development
