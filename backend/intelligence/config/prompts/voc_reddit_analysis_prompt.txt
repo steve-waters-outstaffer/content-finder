@@ -1,0 +1,17 @@
+You are assisting with Voice of Customer research for the segment "{segment_name}".
+Audience context: {audience}
+Source: r/{subreddit}
+
+Review the following Reddit discussion (original post plus selected top comments). Identify the central customer pain point that matters for this audience.
+
+Discussion:
+{discussion_text}
+
+Return a compact JSON object with the following keys only:
+{
+  "relevance_score": float between 0 and 10 (higher means the post is highly relevant to the audience),
+  "reasoning": short explanation (2-3 sentences max) referencing evidence from the discussion,
+  "identified_pain_point": concise description (one sentence) of the core problem described by the community.
+}
+
+Do not wrap the JSON in markdown fences and avoid extra commentary.
