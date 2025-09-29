@@ -30,61 +30,75 @@ const defaultSegments = ['SMB Leaders'];
 const VOCDiscovery = () => {
     const [segmentName, setSegmentName] = useState(defaultSegments[0]);
     const [availableSegments, setAvailableSegments] = useState(defaultSegments);
-    const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [warnings, setWarnings] = useState([]);
     const [redditPosts, setRedditPosts] = useState([]);
     const [googleTrends, setGoogleTrends] = useState([]);
     const [curatedQueries, setCuratedQueries] = useState([]);
     const [feedMessage, setFeedMessage] = useState('');
+    const [isDiscoveryStarted, setIsDiscoveryStarted] = useState(false);
+    const [discoveryLogs, setDiscoveryLogs] = useState([]);
 
     const selectedCount = useMemo(
         () => redditPosts.filter((post) => post.selected).length,
         [redditPosts],
     );
 
-    const fetchDiscovery = useCallback(
-        async (name) => {
-            if (!name) {
-                return;
+    const startDiscovery = useCallback(async () => {
+        if (!segmentName) {
+            return;
+        }
+
+        setIsDiscoveryStarted(true);
+        setError('');
+        setWarnings([]);
+        setFeedMessage('');
+        setRedditPosts([]);
+        setGoogleTrends([]);
+        setCuratedQueries([]);
+        setDiscoveryLogs(['Starting VOC Discovery...']);
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/intelligence/voc-discovery`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    segment_name: segmentName,
+                    enable_reddit: true,
+                    enable_trends: true,
+                    enable_curated_queries: true,
+                }),
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-            setLoading(true);
-            setError('');
-            setWarnings([]);
-            setFeedMessage('');
 
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/intelligence/voc-discovery`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ segment_name: name }),
-                });
+            const data = await response.json();
+            const posts = (data.reddit_posts || []).map((post) => ({
+                ...post,
+                selected: post.selected !== false,
+            }));
 
-                if (!response.ok) {
-                    throw new Error(`Request failed with status ${response.status}`);
-                }
+            setRedditPosts(posts);
+            setGoogleTrends(data.google_trends || []);
+            setCuratedQueries(data.curated_queries || []);
+            setWarnings(data.warnings || []);
 
-                const payload = await response.json();
-                const posts = (payload.reddit_posts || []).map((post) => ({
-                    ...post,
-                    selected: post.selected !== false,
-                }));
-
-                setRedditPosts(posts);
-                setGoogleTrends(payload.google_trends || []);
-                setCuratedQueries(payload.curated_queries || []);
-                setWarnings(payload.warnings || []);
-            } catch (fetchError) {
-                console.error('Failed to run VOC discovery:', fetchError);
-                setError('Unable to load trend discovery data. Please try again.');
-            } finally {
-                setLoading(false);
-            }
-        },
-        [],
-    );
+            const formattedLogs = Array.isArray(data.logs)
+                ? data.logs.map((log) => `[${(log.level || 'info').toUpperCase()}] ${log.message}`)
+                : [];
+            setDiscoveryLogs(formattedLogs.length ? formattedLogs : ['VOC Discovery completed.']);
+        } catch (error) {
+            console.error('Discovery failed:', error);
+            setError('Unable to load trend discovery data. Please try again.');
+            setDiscoveryLogs((prevLogs) => [...prevLogs, `Error: ${error.message}`]);
+        } finally {
+            setIsDiscoveryStarted(false);
+        }
+    }, [segmentName]);
 
     useEffect(() => {
         const loadSegments = async () => {
@@ -112,10 +126,6 @@ const VOCDiscovery = () => {
         loadSegments();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-
-    useEffect(() => {
-        fetchDiscovery(segmentName);
-    }, [fetchDiscovery, segmentName]);
 
     const handleSegmentChange = (event) => {
         setSegmentName(event.target.value);
@@ -166,10 +176,10 @@ const VOCDiscovery = () => {
                 <Button
                     variant="contained"
                     color="primary"
-                    onClick={() => fetchDiscovery(segmentName)}
-                    disabled={loading}
+                    onClick={startDiscovery}
+                    disabled={isDiscoveryStarted || !segmentName}
                 >
-                    Refresh Discovery
+                    {isDiscoveryStarted ? 'Discovery Running...' : 'Start Discovery'}
                 </Button>
 
                 <Stack direction="row" spacing={1} alignItems="center" color={CustomColors.UIGrey600}>
@@ -178,7 +188,51 @@ const VOCDiscovery = () => {
                 </Stack>
             </Stack>
 
-            {loading && (
+            {isDiscoveryStarted && (
+                <Box
+                    sx={(theme) => ({
+                        mt: 2,
+                        p: 2,
+                        borderRadius: 2,
+                        backgroundColor:
+                            theme.palette.mode === 'dark'
+                                ? theme.palette.grey[900]
+                                : theme.palette.grey[100],
+                        boxShadow: 1,
+                    })}
+                >
+                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold} gutterBottom>
+                        Discovery Log
+                    </Typography>
+                    <Box component="pre" sx={{ fontSize: 12, whiteSpace: 'pre-wrap', m: 0 }}>
+                        {discoveryLogs.join('\n')}
+                    </Box>
+                </Box>
+            )}
+
+            {!isDiscoveryStarted && discoveryLogs.length > 0 && (
+                <Box
+                    sx={(theme) => ({
+                        mt: 2,
+                        p: 2,
+                        borderRadius: 2,
+                        backgroundColor:
+                            theme.palette.mode === 'dark'
+                                ? theme.palette.grey[900]
+                                : theme.palette.grey[100],
+                        boxShadow: 1,
+                    })}
+                >
+                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold} gutterBottom>
+                        Discovery Log
+                    </Typography>
+                    <Box component="pre" sx={{ fontSize: 12, whiteSpace: 'pre-wrap', m: 0 }}>
+                        {discoveryLogs.join('\n')}
+                    </Box>
+                </Box>
+            )}
+
+            {isDiscoveryStarted && (
                 <Box display="flex" justifyContent="center" my={4}>
                     <CircularProgress />
                 </Box>
@@ -208,7 +262,7 @@ const VOCDiscovery = () => {
                                 <Chip label={`${selectedCount} selected`} size="small" color="secondary" />
                             </Stack>
 
-                            {!redditPosts.length && !loading ? (
+                            {!redditPosts.length && !isDiscoveryStarted ? (
                                 <Typography variant="body2" color="text.secondary">
                                     No Reddit posts matched the filters for this segment.
                                 </Typography>
@@ -290,7 +344,7 @@ const VOCDiscovery = () => {
                                     </Typography>
                                 </Stack>
 
-                                {!googleTrends.length && !loading ? (
+                                {!googleTrends.length && !isDiscoveryStarted ? (
                                     <Typography variant="body2" color="text.secondary">
                                         Google Trends data is unavailable for this segment.
                                     </Typography>
@@ -338,7 +392,7 @@ const VOCDiscovery = () => {
                                     </Typography>
                                 </Stack>
 
-                                {!curatedQueries.length && !loading ? (
+                                {!curatedQueries.length && !isDiscoveryStarted ? (
                                     <Typography variant="body2" color="text.secondary">
                                         Curated queries will appear once AI analysis is available.
                                     </Typography>
