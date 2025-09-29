@@ -15,6 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { logoutUser } from '../services/AuthService.js';
 import ContentFinder from './ContentFinder';
 import IntelligenceDashboard from './intelligence/IntelligenceDashboard';
+import VOCDiscovery from './intelligence/VOCDiscovery';
 import { CustomColors } from '../theme';
 
 const Dashboard = () => {
@@ -61,11 +62,13 @@ const Dashboard = () => {
                     <Tabs value={activeTab} onChange={handleTabChange}>
                         <Tab label="Content Finder" />
                         <Tab label="Intelligence Engine" />
+                        <Tab label="Trend Discovery" />
                     </Tabs>
                 </Box>
 
                 {activeTab === 0 && <ContentFinder />}
                 {activeTab === 1 && <IntelligenceDashboard />}
+                {activeTab === 2 && <VOCDiscovery />}
             </Container>
         </Box>
     );
