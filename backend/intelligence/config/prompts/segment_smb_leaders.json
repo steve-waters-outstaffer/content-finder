@@ -22,5 +22,31 @@
     "Look for data, trends, and insights that make compelling LinkedIn posts.",
     "Queries MUST focus on the last 12 months or the current year ({current_year}). Avoid using past years like {past_year_1} or {past_year_2}.",
     "Output a pure JSON array of strings (queries). No extra text."
-  ]
+  ],
+  "subreddits": ["recruiting", "startups", "smallbusiness", "humanresources"],
+  "search_keywords": [
+    "SMB hiring challenges",
+    "can't find developers",
+    "recruitment cost",
+    "offshore hiring",
+    "reference checks useless"
+  ],
+  "reddit_filters": {
+    "min_score": 20,
+    "min_comments": 10,
+    "time_range": "month",
+    "sort": "top"
+  },
+  "google_trends": {
+    "primary_keywords": [
+      "SMB hiring challenges",
+      "can't find developers",
+      "recruitment cost",
+      "offshore hiring",
+      "reference checks"
+    ],
+    "comparison_keyword": "recruitment agency",
+    "timeframe": "today 12-m",
+    "geo": "US"
+  }
 }

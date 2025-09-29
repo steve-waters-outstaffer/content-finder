@@ -18,6 +18,7 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from intelligence.agent_research import AgentResearcher
+from intelligence.voc_discovery import VOCDiscoveryError, run_voc_discovery
 
 # Load environment variables
 load_dotenv()
@@ -63,6 +64,28 @@ def get_intelligence_config():
         return jsonify(config)
     except Exception as e:
         return jsonify({'error': f"Failed to load configuration: {str(e)}"}), 500
+
+
+@intelligence_bp.route('/intelligence/voc-discovery', methods=['POST'])
+def voc_discovery():
+    """Run the Voice of Customer discovery workflow for a given segment."""
+
+    payload = request.get_json(silent=True) or {}
+    segment_name = payload.get('segment_name')
+
+    if not segment_name:
+        return jsonify({'error': 'segment_name is required'}), 400
+
+    try:
+        reddit_api_key = os.getenv('SCRAPECREATORS_API_KEY')
+        discovery_payload = run_voc_discovery(segment_name=segment_name, reddit_api_key=reddit_api_key)
+        return jsonify(discovery_payload)
+    except VOCDiscoveryError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:  # noqa: BLE001 - ensure unexpected errors bubble to the client
+        print(f"VOC discovery failed: {exc}")
+        return jsonify({'error': 'Failed to run VOC discovery.'}), 500
+
 
 @intelligence_bp.route('/intelligence/sessions', methods=['POST'])
 def create_session():
