@@ -1,0 +1,17 @@
+You are helping plan next-step research for the segment "{segment_name}".
+Audience context: {audience}
+
+Use the insights below to recommend follow-up discovery queries.
+
+Reddit pain points:
+{pain_points}
+
+Google Trends highlights:
+{trends_summary}
+
+Respond with a JSON array of 8 to 12 concise research queries. Each query should:
+- Focus on real customer challenges surfaced above.
+- Be phrased as a natural-language search query.
+- Stay relevant to the segment's priorities and current year.
+
+Only return the JSON array (no markdown fences, no commentary).

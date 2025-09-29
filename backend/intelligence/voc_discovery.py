@@ -11,23 +11,30 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import requests
+from google import genai
+from google.genai import types
 from google.cloud import firestore
 from pytrends.request import TrendReq
 
 logger = logging.getLogger(__name__)
 
 SCRAPECREATORS_SUBREDDIT_URL = "https://api.scrapecreators.com/v1/reddit/subreddit"
+SCRAPECREATORS_COMMENTS_URL = "https://api.scrapecreators.com/v1/reddit/post/comments"
 FIRESTORE_COLLECTION = "voc_discovery_processed_posts"
+DEFAULT_GEMINI_MODEL = os.getenv("MODEL", "gemini-2.5-flash")
+ADVANCED_GEMINI_MODEL = os.getenv("MODEL_PRO", DEFAULT_GEMINI_MODEL)
 
 _firestore_client: Optional[firestore.Client] = None
 _firestore_initialized = False
 _local_dedupe_cache: Dict[str, set[str]] = {}
+_gemini_client: Optional[genai.Client] = None
 
 
 class VOCDiscoveryError(RuntimeError):
@@ -67,6 +74,21 @@ def _get_local_cache(segment_name: str) -> set[str]:
     if segment_name not in _local_dedupe_cache:
         _local_dedupe_cache[segment_name] = set()
     return _local_dedupe_cache[segment_name]
+
+
+def _get_gemini_client() -> Optional[genai.Client]:
+    """Return a Gemini client when credentials are available."""
+
+    global _gemini_client
+    if _gemini_client is not None:
+        return _gemini_client
+
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return None
+
+    _gemini_client = genai.Client(api_key=api_key)
+    return _gemini_client
 
 
 def _load_segment_config(segment_name: str) -> Dict[str, Any]:
@@ -237,6 +259,258 @@ def fetch_reddit_posts(
     return curated_posts, warnings
 
 
+def _load_prompt_template(filename: str) -> str:
+    """Load a prompt template from the prompts directory."""
+
+    prompt_path = Path(__file__).resolve().parent / "config" / "prompts" / filename
+    if not prompt_path.exists():
+        raise VOCDiscoveryError(f"Prompt template '{filename}' is missing.")
+    return prompt_path.read_text(encoding="utf-8")
+
+
+def _extract_post_body(payload: Any) -> str:
+    """Attempt to locate the original post body within a comments payload."""
+
+    if isinstance(payload, dict):
+        if isinstance(payload.get("selftext"), str) and payload.get("selftext"):  # type: ignore[redundant-expr]
+            return payload["selftext"]  # type: ignore[index]
+        data = payload.get("data")
+        if data:
+            body = _extract_post_body(data)
+            if body:
+                return body
+        for value in payload.values():
+            if isinstance(value, (dict, list)):
+                body = _extract_post_body(value)
+                if body:
+                    return body
+    elif isinstance(payload, list):
+        for item in payload:
+            body = _extract_post_body(item)
+            if body:
+                return body
+    return ""
+
+
+def _extract_comment_bodies(payload: Any, limit: int = 5) -> List[str]:
+    """Collect up to `limit` human-written comment bodies from a payload."""
+
+    comments: List[str] = []
+
+    def _visit(node: Any) -> None:
+        if len(comments) >= limit:
+            return
+        if isinstance(node, dict):
+            body = node.get("body")
+            if isinstance(body, str):
+                trimmed = body.strip()
+                if trimmed and trimmed.lower() not in {"[deleted]", "[removed]"}:
+                    comments.append(trimmed)
+                    if len(comments) >= limit:
+                        return
+            for key in ("replies", "data", "children"):
+                value = node.get(key)
+                if isinstance(value, (dict, list)):
+                    _visit(value)
+        elif isinstance(node, list):
+            for item in node:
+                if len(comments) >= limit:
+                    break
+                _visit(item)
+
+    _visit(payload)
+    return comments[:limit]
+
+
+def _normalise_json_response(raw_text: str) -> Any:
+    """Extract JSON data from a Gemini response string."""
+
+    cleaned_text = raw_text.strip()
+    cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
+    if cleaned_text and not cleaned_text.startswith("{") and not cleaned_text.startswith("["):
+        json_start = cleaned_text.find("{")
+        json_end = cleaned_text.rfind("}") + 1
+        if json_start != -1 and json_end > json_start:
+            cleaned_text = cleaned_text[json_start:json_end]
+    if not cleaned_text:
+        raise ValueError("Empty response received from Gemini.")
+    return json.loads(cleaned_text)
+
+
+def get_post_details_and_score(
+    post: Dict[str, Any],
+    segment_config: Dict[str, Any],
+    api_key: Optional[str],
+    *,
+    segment_name: str,
+) -> Tuple[Dict[str, Any], List[str]]:
+    """Enrich a Reddit post with discussion context and AI relevance scoring."""
+
+    enriched_post = dict(post)
+    warnings: List[str] = []
+
+    if not api_key:
+        warnings.append("SCRAPECREATORS_API_KEY missing; skipped Reddit comment enrichment.")
+        return enriched_post, warnings
+
+    headers = {"x-api-key": api_key}
+    params = {"url": enriched_post.get("url")}
+
+    comments_payload: Any = {}
+    if params["url"]:
+        try:
+            response = requests.get(
+                SCRAPECREATORS_COMMENTS_URL,
+                headers=headers,
+                params=params,
+                timeout=30,
+            )
+            response.raise_for_status()
+            comments_payload = response.json() if response.content else {}
+        except requests.RequestException as exc:
+            warning = f"Failed to fetch comments for post '{enriched_post.get('id')}': {exc}"
+            logger.warning(warning)
+            warnings.append(warning)
+
+    post_body = enriched_post.get("content_snippet", "")
+    if comments_payload:
+        extracted_body = _extract_post_body(comments_payload)
+        if extracted_body:
+            post_body = extracted_body
+    comment_bodies = _extract_comment_bodies(comments_payload) if comments_payload else []
+
+    discussion_lines = [f"Title: {enriched_post.get('title', '')}"]
+    if post_body:
+        discussion_lines.append("\nPost Body:\n" + post_body.strip())
+    if comment_bodies:
+        formatted_comments = "\n---\n".join(comment_bodies)
+        discussion_lines.append("\nTop Comments:\n" + formatted_comments)
+    discussion_text = "\n\n".join(discussion_lines)
+
+    gemini_client = _get_gemini_client()
+    if not gemini_client:
+        warnings.append("GEMINI_API_KEY missing; skipped AI scoring for Reddit posts.")
+        return enriched_post, warnings
+
+    try:
+        prompt_template = _load_prompt_template("voc_reddit_analysis_prompt.txt")
+        prompt = prompt_template.format(
+            segment_name=segment_name,
+            audience=segment_config.get("audience", ""),
+            subreddit=enriched_post.get("subreddit", ""),
+            discussion_text=discussion_text,
+        )
+    except Exception as exc:
+        warning = f"Failed to load Reddit analysis prompt: {exc}"
+        logger.error(warning)
+        warnings.append(warning)
+        return enriched_post, warnings
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=ADVANCED_GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+                max_output_tokens=1024,
+            ),
+        )
+        parsed = _normalise_json_response(response.text or "")
+        if isinstance(parsed, dict):
+            enriched_post["ai_analysis"] = parsed
+        else:
+            warnings.append("Gemini returned unexpected structure for Reddit analysis.")
+    except Exception as exc:  # noqa: BLE001 - capture parsing and API issues
+        warning = f"Gemini Reddit analysis failed for post '{enriched_post.get('id')}': {exc}"
+        logger.warning(warning)
+        warnings.append(warning)
+
+    return enriched_post, warnings
+
+
+def generate_curated_queries(
+    analyzed_posts: Sequence[Dict[str, Any]],
+    trends_data: Sequence[Dict[str, Any]],
+    segment_config: Dict[str, Any],
+    *,
+    segment_name: str,
+) -> Tuple[List[str], List[str]]:
+    """Synthesise the Reddit and Google Trends insights into research queries."""
+
+    gemini_client = _get_gemini_client()
+    if not gemini_client:
+        return [], ["GEMINI_API_KEY missing; unable to generate curated queries."]
+
+    pain_point_lines: List[str] = []
+    for post in analyzed_posts:
+        ai_analysis = post.get("ai_analysis") or {}
+        if not isinstance(ai_analysis, dict):
+            continue
+        pain_point = ai_analysis.get("identified_pain_point") or "(pain point unavailable)"
+        relevance = ai_analysis.get("relevance_score")
+        title = post.get("title", "")
+        subreddit = post.get("subreddit", "")
+        if relevance is not None:
+            pain_point_lines.append(
+                f"- {pain_point} (relevance {relevance}) — r/{subreddit} | {title}"
+            )
+        else:
+            pain_point_lines.append(f"- {pain_point} — r/{subreddit} | {title}")
+
+    trends_lines: List[str] = []
+    for trend in trends_data:
+        query = trend.get("query")
+        if not query:
+            continue
+        rising = trend.get("related_queries", {}).get("rising", []) if isinstance(trend.get("related_queries"), dict) else []
+        rising_terms = ", ".join(
+            str(item.get("query"))
+            for item in rising[:3]
+            if isinstance(item, dict) and item.get("query")
+        )
+        if rising_terms:
+            trends_lines.append(f"- {query}: rising searches include {rising_terms}")
+        else:
+            trends_lines.append(f"- {query}: steady interest over time")
+
+    pain_points = "\n".join(pain_point_lines) if pain_point_lines else "- No AI-analyzed Reddit posts were available."
+    trends_summary = "\n".join(trends_lines) if trends_lines else "- Google Trends data unavailable."
+
+    try:
+        prompt_template = _load_prompt_template("voc_curated_queries_prompt.txt")
+        prompt = prompt_template.format(
+            segment_name=segment_name,
+            audience=segment_config.get("audience", ""),
+            pain_points=pain_points,
+            trends_summary=trends_summary,
+        )
+    except Exception as exc:
+        warning = f"Failed to load curated queries prompt: {exc}"
+        logger.error(warning)
+        return [], [warning]
+
+    try:
+        response = gemini_client.models.generate_content(
+            model=ADVANCED_GEMINI_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+                max_output_tokens=1024,
+            ),
+        )
+        parsed = _normalise_json_response(response.text or "")
+        if isinstance(parsed, list):
+            cleaned_queries = [str(item).strip() for item in parsed if str(item).strip()]
+            return cleaned_queries, []
+        return [], ["Gemini returned unexpected structure for curated queries generation."]
+    except Exception as exc:  # noqa: BLE001 - capture parsing and API issues
+        warning = f"Gemini curated query generation failed: {exc}"
+        logger.warning(warning)
+        return [], [warning]
+
+
 def _dataframe_to_records(dataframe: Any, *, rename_columns: Optional[Dict[str, str]] = None) -> List[Dict[str, Any]]:
     """Convert a pandas DataFrame to a list of JSON-serialisable records."""
 
@@ -347,6 +621,18 @@ def run_voc_discovery(
         logger.error(warning)
         warnings.append(warning)
 
+    enriched_posts: List[Dict[str, Any]] = []
+    if reddit_posts:
+        for post in reddit_posts:
+            enriched_post, post_warnings = get_post_details_and_score(
+                post,
+                segment_config,
+                reddit_api_key,
+                segment_name=segment_name,
+            )
+            enriched_posts.append(enriched_post)
+            warnings.extend(post_warnings)
+
     try:
         google_trends, trends_warnings = fetch_google_trends(segment_config)
         warnings.extend(trends_warnings)
@@ -355,10 +641,24 @@ def run_voc_discovery(
         logger.error(warning)
         warnings.append(warning)
 
+    curated_queries: List[str] = []
+    try:
+        curated_queries, query_warnings = generate_curated_queries(
+            enriched_posts or reddit_posts,
+            google_trends,
+            segment_config,
+            segment_name=segment_name,
+        )
+        warnings.extend(query_warnings)
+    except Exception as exc:  # noqa: BLE001 - capture synthesis failures
+        warning = f"Curated query generation failed: {exc}"
+        logger.error(warning)
+        warnings.append(warning)
+
     return {
-        "reddit_posts": reddit_posts,
+        "reddit_posts": enriched_posts or reddit_posts,
         "google_trends": google_trends,
-        "curated_queries": [],
+        "curated_queries": curated_queries,
         "warnings": warnings,
     }
 
