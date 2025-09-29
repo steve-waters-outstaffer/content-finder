@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -322,19 +324,43 @@ def _extract_comment_bodies(payload: Any, limit: int = 5) -> List[str]:
     return comments[:limit]
 
 
-def _normalise_json_response(raw_text: str) -> Any:
-    """Extract JSON data from a Gemini response string."""
+def _normalise_json_response(response_text: str) -> Any:
+    """Better JSON parsing with error recovery"""
 
-    cleaned_text = raw_text.strip()
-    cleaned_text = cleaned_text.replace("```json", "").replace("```", "").strip()
-    if cleaned_text and not cleaned_text.startswith("{") and not cleaned_text.startswith("["):
-        json_start = cleaned_text.find("{")
-        json_end = cleaned_text.rfind("}") + 1
-        if json_start != -1 and json_end > json_start:
-            cleaned_text = cleaned_text[json_start:json_end]
-    if not cleaned_text:
-        raise ValueError("Empty response received from Gemini.")
-    return json.loads(cleaned_text)
+    if not response_text:
+        raise ValueError("Empty response from Gemini")
+
+    try:
+        # Try to parse as-is
+        return json.loads(response_text)
+    except json.JSONDecodeError as exc:
+        logger.warning("Initial JSON parse failed: %s", exc)
+
+        # Try to extract JSON from markdown code blocks
+        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL)
+        if json_match:
+            try:
+                return json.loads(json_match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+        # Try to find first complete JSON object
+        try:
+            start = response_text.index("{")
+            end = response_text.rindex("}") + 1
+            potential_json = response_text[start:end]
+            return json.loads(potential_json)
+        except (ValueError, json.JSONDecodeError):
+            pass
+
+        # Last resort - try to fix common issues
+        cleaned = response_text.strip().replace("\n", " ").replace("\\n", "\\\\n")
+        try:
+            return json.loads(cleaned)
+        except json.JSONDecodeError as final_exc:
+            raise ValueError(
+                f"Could not parse JSON after multiple attempts: {response_text[:200]}"
+            ) from final_exc
 
 
 def get_post_details_and_score(
@@ -603,62 +629,195 @@ def fetch_google_trends(segment_config: Dict[str, Any]) -> Tuple[List[Dict[str, 
 
 def run_voc_discovery(
     segment_name: str,
-    reddit_api_key: Optional[str],
+    segment_config: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    """Execute the discovery workflow for a given segment."""
+    """Enhanced VOC discovery with detailed logging."""
 
-    segment_config = _load_segment_config(segment_name)
-
-    reddit_posts: List[Dict[str, Any]] = []
-    google_trends: List[Dict[str, Any]] = []
     warnings: List[str] = []
+    results: Dict[str, Any] = {
+        "segment": segment_name,
+        "reddit_posts": [],
+        "google_trends": [],
+        "curated_queries": [],
+        "warnings": warnings,
+        "logs": [],
+    }
+
+    def log_progress(message: str, level: str = "info") -> None:
+        log_method = getattr(logger, level, None)
+        if not callable(log_method):
+            log_method = logger.info
+        log_method(message)
+        results["logs"].append(
+            {
+                "timestamp": time.time(),
+                "level": level,
+                "message": message,
+            }
+        )
+
+    log_progress(f"Initializing VOC Discovery for segment: {segment_name}")
 
     try:
-        reddit_posts, reddit_warnings = fetch_reddit_posts(segment_config, reddit_api_key, segment_name)
-        warnings.extend(reddit_warnings)
-    except Exception as exc:  # noqa: BLE001 - capture any fatal reddit issues
-        warning = f"Reddit discovery failed: {exc}"
-        logger.error(warning)
-        warnings.append(warning)
+        base_config = _load_segment_config(segment_name)
+        log_progress("Loaded segment configuration")
+    except VOCDiscoveryError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - escalate unexpected configuration failures
+        error_msg = f"Failed to load configuration for segment '{segment_name}': {exc}"
+        log_progress(error_msg, "error")
+        raise VOCDiscoveryError(error_msg) from exc
 
-    enriched_posts: List[Dict[str, Any]] = []
-    if reddit_posts:
-        for post in reddit_posts:
-            enriched_post, post_warnings = get_post_details_and_score(
-                post,
+    if segment_config:
+        merged_config: Dict[str, Any] = dict(base_config)
+        for key, value in segment_config.items():
+            if isinstance(value, dict) and isinstance(merged_config.get(key), dict):
+                updated = dict(merged_config[key])
+                updated.update(value)
+                merged_config[key] = updated
+            else:
+                merged_config[key] = value
+        segment_config = merged_config
+    else:
+        segment_config = base_config
+
+    reddit_api_key = os.getenv("SCRAPECREATORS_API_KEY")
+    fetched_reddit_posts: List[Dict[str, Any]] = []
+
+    if segment_config.get("enable_reddit", True):
+        subreddits = segment_config.get("subreddits", [])
+        log_progress(f"Starting Reddit discovery for segment: {segment_name}")
+        log_progress(f"Searching {len(subreddits)} subreddits: {', '.join(subreddits)}")
+
+        if not reddit_api_key:
+            warning = "SCRAPECREATORS_API_KEY missing; skipped Reddit discovery."
+            log_progress(warning, "warning")
+            warnings.append(warning)
+        else:
+            try:
+                fetched_reddit_posts, reddit_warnings = fetch_reddit_posts(
+                    segment_config,
+                    reddit_api_key,
+                    segment_name,
+                )
+                log_progress(
+                    f"Found {len(fetched_reddit_posts)} Reddit posts for analysis", "success"
+                )
+                for warning_msg in reddit_warnings:
+                    log_progress(warning_msg, "warning")
+                    warnings.append(warning_msg)
+            except Exception as exc:  # noqa: BLE001 - capture fetch-level errors
+                error_msg = f"Failed to fetch Reddit posts: {exc}"
+                log_progress(error_msg, "error")
+                warnings.append(error_msg)
+
+            for post in fetched_reddit_posts:
+                try:
+                    log_progress(
+                        f"Analyzing post '{post.get('title', 'Untitled')[:50]}...'"
+                    )
+                    enriched_post, post_warnings = get_post_details_and_score(
+                        post,
+                        segment_config,
+                        reddit_api_key,
+                        segment_name=segment_name,
+                    )
+                    if enriched_post:
+                        results["reddit_posts"].append(enriched_post)
+                        log_progress(
+                            f"✓ Successfully analyzed post {enriched_post.get('id')}", "success"
+                        )
+                    for warning_msg in post_warnings:
+                        log_progress(warning_msg, "warning")
+                        warnings.append(warning_msg)
+                except Exception as exc:  # noqa: BLE001 - capture enrichment errors per post
+                    error_msg = f"Failed to analyze post {post.get('id')}: {exc}"
+                    log_progress(error_msg, "error")
+                    warnings.append(error_msg)
+    else:
+        log_progress("Reddit discovery disabled in configuration", "warning")
+
+    if segment_config.get("enable_trends", True):
+        log_progress("Starting Google Trends analysis...")
+        trends_config = (
+            segment_config.get("google_trends")
+            if isinstance(segment_config.get("google_trends"), dict)
+            else {}
+        )
+        trends_keywords: Sequence[str] = (
+            segment_config.get("trends_keywords")
+            or trends_config.get("primary_keywords")
+            or segment_config.get("search_keywords", [])
+        )
+
+        log_progress(
+            f"Analyzing {len(trends_keywords)} keywords: {', '.join(map(str, trends_keywords))}"
+        )
+
+        if not trends_keywords:
+            warning = "No Google Trends keywords configured for this segment."
+            log_progress(warning, "warning")
+            warnings.append(warning)
+        else:
+            for keyword in trends_keywords:
+                try:
+                    log_progress(f"Fetching trends for '{keyword}'...")
+                    time.sleep(2)
+
+                    single_segment_config = dict(segment_config)
+                    single_trends_config = dict(trends_config)
+                    single_trends_config["primary_keywords"] = [keyword]
+                    single_segment_config["google_trends"] = single_trends_config
+
+                    trend_results, trend_warnings = fetch_google_trends(single_segment_config)
+                    for warning_msg in trend_warnings:
+                        log_progress(warning_msg, "warning")
+                        warnings.append(warning_msg)
+                    if trend_results:
+                        results["google_trends"].extend(trend_results)
+                        log_progress(f"✓ Got trends data for '{keyword}'", "success")
+                except Exception as exc:  # noqa: BLE001 - handle per-keyword failures
+                    if "429" in str(exc):
+                        log_progress(
+                            f"Rate limited on '{keyword}', waiting 10 seconds...",
+                            "warning",
+                        )
+                        time.sleep(10)
+                    else:
+                        error_msg = f"Trends failed for '{keyword}': {exc}"
+                        log_progress(error_msg, "error")
+                        warnings.append(error_msg)
+    else:
+        log_progress("Google Trends analysis disabled in configuration", "warning")
+
+    if segment_config.get("enable_curated_queries", True):
+        log_progress("Generating AI-curated search queries...")
+        try:
+            curated_queries, query_warnings = generate_curated_queries(
+                results["reddit_posts"] or fetched_reddit_posts,
+                results["google_trends"],
                 segment_config,
-                reddit_api_key,
                 segment_name=segment_name,
             )
-            enriched_posts.append(enriched_post)
-            warnings.extend(post_warnings)
+            results["curated_queries"] = curated_queries
+            log_progress(
+                f"✓ Generated {len(curated_queries)} curated queries", "success"
+            )
+            for warning_msg in query_warnings:
+                log_progress(warning_msg, "warning")
+                warnings.append(warning_msg)
+        except Exception as exc:  # noqa: BLE001 - capture synthesis failures
+            error_msg = f"Failed to generate curated queries: {exc}"
+            log_progress(error_msg, "error")
+            warnings.append(error_msg)
+    else:
+        log_progress("Curated queries generation disabled in configuration", "warning")
 
-    try:
-        google_trends, trends_warnings = fetch_google_trends(segment_config)
-        warnings.extend(trends_warnings)
-    except Exception as exc:  # noqa: BLE001 - capture any fatal trends issues
-        warning = f"Google Trends discovery failed: {exc}"
-        logger.error(warning)
-        warnings.append(warning)
+    log_progress(
+        "Discovery complete! Found "
+        f"{len(results['reddit_posts'])} Reddit posts, {len(results['google_trends'])} trends signals",
+        "success",
+    )
 
-    curated_queries: List[str] = []
-    try:
-        curated_queries, query_warnings = generate_curated_queries(
-            enriched_posts or reddit_posts,
-            google_trends,
-            segment_config,
-            segment_name=segment_name,
-        )
-        warnings.extend(query_warnings)
-    except Exception as exc:  # noqa: BLE001 - capture synthesis failures
-        warning = f"Curated query generation failed: {exc}"
-        logger.error(warning)
-        warnings.append(warning)
-
-    return {
-        "reddit_posts": enriched_posts or reddit_posts,
-        "google_trends": google_trends,
-        "curated_queries": curated_queries,
-        "warnings": warnings,
-    }
+    return results
 

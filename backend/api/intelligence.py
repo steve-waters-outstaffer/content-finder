@@ -77,8 +77,23 @@ def voc_discovery():
         return jsonify({'error': 'segment_name is required'}), 400
 
     try:
-        reddit_api_key = os.getenv('SCRAPECREATORS_API_KEY')
-        discovery_payload = run_voc_discovery(segment_name=segment_name, reddit_api_key=reddit_api_key)
+        config_overrides = {
+            key: value
+            for key, value in payload.items()
+            if key
+            in {
+                "enable_reddit",
+                "enable_trends",
+                "enable_curated_queries",
+                "google_trends",
+                "trends_keywords",
+                "subreddits",
+            }
+        }
+        discovery_payload = run_voc_discovery(
+            segment_name=segment_name,
+            segment_config=config_overrides or None,
+        )
         return jsonify(discovery_payload)
     except VOCDiscoveryError as exc:
         return jsonify({'error': str(exc)}), 400
