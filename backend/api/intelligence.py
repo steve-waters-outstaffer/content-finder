@@ -18,7 +18,11 @@ import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 
 from intelligence.agent_research import AgentResearcher
-from intelligence.voc_discovery import VOCDiscoveryError, run_voc_discovery
+from intelligence.voc_discovery import (
+    VOCDiscoveryError,
+    _load_segment_config,
+    run_voc_discovery,
+)
 
 # Load environment variables
 load_dotenv()
@@ -64,6 +68,40 @@ def get_intelligence_config():
         return jsonify(config)
     except Exception as e:
         return jsonify({'error': f"Failed to load configuration: {str(e)}"}), 500
+
+
+@intelligence_bp.route('/segment-config/<path:segment_name>', methods=['GET'])
+def get_segment_config(segment_name: str):
+    """Return the discovery configuration details for a specific segment."""
+
+    try:
+        config = _load_segment_config(segment_name)
+    except VOCDiscoveryError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:  # noqa: BLE001 - surface unexpected failures to client
+        return (
+            jsonify({'error': f"Failed to load configuration for '{segment_name}': {exc}"}),
+            500,
+        )
+
+    subreddits = config.get('subreddits') or []
+    trends_keywords = config.get('trends_keywords')
+
+    if not trends_keywords:
+        google_trends = config.get('google_trends') or {}
+        trends_keywords = (
+            google_trends.get('primary_keywords')
+            or config.get('search_keywords')
+            or []
+        )
+
+    return jsonify(
+        {
+            'segment': segment_name,
+            'subreddits': subreddits,
+            'trends_keywords': trends_keywords,
+        }
+    )
 
 
 @intelligence_bp.route('/intelligence/voc-discovery', methods=['POST'])
