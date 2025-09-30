@@ -38,6 +38,8 @@ const VOCDiscovery = () => {
     const [feedMessage, setFeedMessage] = useState('');
     const [isDiscoveryStarted, setIsDiscoveryStarted] = useState(false);
     const [discoveryLogs, setDiscoveryLogs] = useState([]);
+    const [segmentConfig, setSegmentConfig] = useState(null);
+    const [discoveryResults, setDiscoveryResults] = useState(null);
 
     const selectedCount = useMemo(
         () => redditPosts.filter((post) => post.selected).length,
@@ -57,6 +59,7 @@ const VOCDiscovery = () => {
         setGoogleTrends([]);
         setCuratedQueries([]);
         setDiscoveryLogs(['Starting VOC Discovery...']);
+        setDiscoveryResults(null);
 
         try {
             const response = await fetch(`${API_BASE_URL}/api/intelligence/voc-discovery`, {
@@ -86,6 +89,7 @@ const VOCDiscovery = () => {
             setGoogleTrends(data.google_trends || []);
             setCuratedQueries(data.curated_queries || []);
             setWarnings(data.warnings || []);
+            setDiscoveryResults(data);
 
             const formattedLogs = Array.isArray(data.logs)
                 ? data.logs.map((log) => `[${(log.level || 'info').toUpperCase()}] ${log.message}`)
@@ -126,6 +130,58 @@ const VOCDiscovery = () => {
         loadSegments();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        setSegmentConfig(null);
+        setDiscoveryResults(null);
+        setRedditPosts([]);
+        setGoogleTrends([]);
+        setCuratedQueries([]);
+        setWarnings([]);
+        setError('');
+        setFeedMessage('');
+        setDiscoveryLogs([]);
+        setIsDiscoveryStarted(false);
+
+        if (!segmentName) {
+            return;
+        }
+
+        let isCancelled = false;
+
+        const fetchConfig = async () => {
+            try {
+                const response = await fetch(
+                    `${API_BASE_URL}/api/segment-config/${encodeURIComponent(segmentName)}`,
+                );
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!isCancelled) {
+                    setSegmentConfig({
+                        subreddits: Array.isArray(data.subreddits) ? data.subreddits : [],
+                        trends_keywords: Array.isArray(data.trends_keywords)
+                            ? data.trends_keywords
+                            : [],
+                    });
+                }
+            } catch (configError) {
+                console.error('Failed to fetch segment config:', configError);
+                if (!isCancelled) {
+                    setSegmentConfig({ subreddits: [], trends_keywords: [] });
+                }
+            }
+        };
+
+        fetchConfig();
+
+        return () => {
+            isCancelled = true;
+        };
+    }, [segmentName]);
 
     const handleSegmentChange = (event) => {
         setSegmentName(event.target.value);
@@ -188,6 +244,50 @@ const VOCDiscovery = () => {
                 </Stack>
             </Stack>
 
+            {!isDiscoveryStarted && segmentConfig && (
+                <Card sx={{ mt: 2 }}>
+                    <CardContent>
+                        <Typography variant="h6" fontWeight={FontWeight.SemiBold} gutterBottom>
+                            🔍 Discovery Configuration
+                        </Typography>
+                        <Grid container spacing={2}>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                    Subreddits to Search
+                                </Typography>
+                                {segmentConfig.subreddits?.length ? (
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                        {segmentConfig.subreddits.map((subreddit) => (
+                                            <Chip key={subreddit} label={`r/${subreddit}`} size="small" />
+                                        ))}
+                                    </Stack>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                        No subreddits configured for this segment.
+                                    </Typography>
+                                )}
+                            </Grid>
+                            <Grid item xs={12} md={6}>
+                                <Typography variant="subtitle2" color="text.secondary" gutterBottom>
+                                    Google Trends Keywords
+                                </Typography>
+                                {segmentConfig.trends_keywords?.length ? (
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                        {segmentConfig.trends_keywords.map((keyword) => (
+                                            <Chip key={keyword} label={keyword} size="small" />
+                                        ))}
+                                    </Stack>
+                                ) : (
+                                    <Typography variant="body2" color="text.secondary">
+                                        No Google Trends keywords configured for this segment.
+                                    </Typography>
+                                )}
+                            </Grid>
+                        </Grid>
+                    </CardContent>
+                </Card>
+            )}
+
             {isDiscoveryStarted && (
                 <Box
                     sx={(theme) => ({
@@ -236,6 +336,15 @@ const VOCDiscovery = () => {
                 <Box display="flex" justifyContent="center" my={4}>
                     <CircularProgress />
                 </Box>
+            )}
+
+            {!isDiscoveryStarted && discoveryResults && (
+                <Alert severity="success" sx={{ mb: 2 }}>
+                    Discovery completed with {discoveryResults.reddit_posts?.length || 0} Reddit
+                    insight{(discoveryResults.reddit_posts?.length || 0) === 1 ? '' : 's'} and{' '}
+                    {discoveryResults.google_trends?.length || 0} Google Trends signal
+                    {(discoveryResults.google_trends?.length || 0) === 1 ? '' : 's'}.
+                </Alert>
             )}
 
             {error && (
