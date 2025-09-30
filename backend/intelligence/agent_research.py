@@ -1,283 +1,302 @@
-"""
-Agent-based research engine for intelligence pipeline
-Replaces static config searches with dynamic AI-generated queries
-"""
-import os
-import json
+"""Agent-based research workflow for the intelligence pipeline."""
+
+from __future__ import annotations
+
 import asyncio
-import hashlib
-import re
-from typing import List, Dict, Any, Optional
+import json
+import os
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any, Dict, Iterable, List, Optional
+
 from dotenv import load_dotenv
 
-import httpx
-from google import genai
-from google.genai import types
-from firecrawl import AsyncFirecrawl
+from backend.core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
+from backend.core.gemini_client import GeminiClient, GeminiClientError
+from backend.core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
 
-# Load environment variables
+# Load environment variables when running locally/scripts
 load_dotenv()
 
-class AgentResearcher:
-    """Agent-based research engine using Tavily + Firecrawl + Gemini"""
 
-    def __init__(self):
-        self.gemini_key = os.getenv("GEMINI_API_KEY")
-        self.tavily_key = os.getenv("TAVILY_API_KEY")
-        self.firecrawl_key = os.getenv("FIRECRAWL_API_KEY")
+@dataclass(slots=True)
+class ResearchSource:
+    """Minimal representation of a researched source."""
 
-        if not all([self.gemini_key, self.tavily_key, self.firecrawl_key]):
-            raise RuntimeError("Missing required API keys: GEMINI_API_KEY, TAVILY_API_KEY, FIRECRAWL_API_KEY")
+    title: str
+    url: str
+    snippet: str
+    score: float
 
-        self.firecrawl = AsyncFirecrawl(api_key=self.firecrawl_key)
-        self.client = genai.Client(api_key=self.gemini_key)
-        self.flash_model = os.getenv("MODEL", "gemini-2.5-flash")
-        self.pro_model = os.getenv("MODEL_PRO", "gemini-2.5-pro")
-
-    def get_planner_prompt(self, segment_name: str) -> str:
-        """Constructs the planner prompt from a base template and segment-specific config."""
-        try:
-            current_year = datetime.now().year
-            config_dir = Path(__file__).parent / 'config' / 'prompts'
-
-            # 1. Load the base template
-            with open(config_dir / 'planner_base.txt', 'r') as f:
-                base_template = f.read()
-
-            # 2. Load the segment-specific details - CORRECTED FILENAME
-            segment_file = f"segment_{segment_name.lower().replace(' ', '_')}.json"
-            segment_config_path = config_dir / segment_file
-
-            # Fallback to smb_leaders if a specific config doesn't exist
-            if not segment_config_path.exists():
-                print(f"Warning: No specific planner config found for '{segment_name}'. Falling back to smb_leaders config.")
-                segment_config_path = config_dir / 'segment_smb_leaders.json'
-
-            with open(segment_config_path, 'r') as f:
-                segment_config = json.load(f)
-
-            # 3. Format the lists from the config into bullet points
-            priorities_str = "\n".join([f"- {item}" for item in segment_config.get("priorities", [])])
-            focus_areas_str = "\n".join([f"- {item}" for item in segment_config.get("focus_areas", [])])
-
-            # Inject current year into rules that need it
-            rules_list = []
-            for rule in segment_config.get("rules", []):
-                formatted_rule = rule.format(
-                    current_year=current_year,
-                    past_year_1=current_year - 1,
-                    past_year_2=current_year - 2
-                )
-                rules_list.append(f"- {formatted_rule}")
-            rules_str = "\n".join(rules_list)
-
-            # 4. Populate the template with the details
-            prompt = base_template.format(
-                current_year=current_year,
-                audience=segment_config.get("audience", ""),
-                priorities=priorities_str,
-                focus_areas=focus_areas_str,
-                rules=rules_str
-            )
-            return prompt
-
-        except FileNotFoundError:
-            # General fallback if no files can be found
-            print(f"Warning: Could not find planner base or segment files. Using generic prompt.")
-            return f"You are a research planner. The current year is {datetime.now().year}. Turn the mission into 8-12 web-ready search queries. Focus on recent data. Output a pure JSON array of strings."
-        except Exception as e:
-            print(f"Error loading planner prompt for {segment_name}: {e}")
-            return f"You are a research planner. Turn the mission into 8-12 web-ready search queries."
-
-
-    async def plan_queries(self, mission: str, segment_name: str, max_queries: int = 10) -> List[str]:
-        """Use Gemini to generate focused queries for the mission"""
-        planner_prompt = self.get_planner_prompt(segment_name)
-        full_prompt = f"{planner_prompt}\n\nMission: {mission}\nReturn at most {max_queries} queries."
-
-        try:
-            resp = self.client.models.generate_content(
-                model=self.flash_model,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.3,
-                    max_output_tokens=1024,
-                ),
-            )
-            response_text = (resp.text or "").strip().replace('```json', '').replace('```', '').strip()
-            queries = json.loads(response_text)
-            if not isinstance(queries, list):
-                raise ValueError("Planner did not return a list")
-            return [q for q in queries if isinstance(q, str)][:max_queries]
-        except Exception as e:
-            print(f"Query planning failed: {e}")
-            return [mission]
-
-    async def tavily_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
-        """Search with Tavily API"""
-        payload = {
-            "api_key": self.tavily_key, "query": query, "max_results": max_results,
-            "search_depth": "advanced", "include_answer": True
-        }
-        async with httpx.AsyncClient(timeout=60) as client:
-            try:
-                r = await client.post("https://api.tavily.com/search", json=payload)
-                r.raise_for_status()
-                return r.json()
-            except Exception as e:
-                print(f"Tavily search failed for '{query}': {e}")
-                return {"results": []}
-
-    async def scrape_url(self, doc: Dict[str, Any]) -> Dict[str, Any]:
-        """Scrape a single URL with Firecrawl"""
-        url = doc.get("url")
-        if not url: return doc
-        try:
-            scraped_data = await self.firecrawl.scrape(url=url, params={'pageOptions': {'onlyMainContent': True}})
-            if scraped_data and scraped_data.markdown:
-                doc['passages'] = [scraped_data.markdown]
-                print(f"  Scraped: {url}")
-            else:
-                doc['passages'] = [doc.get('content', '')] # Fallback to snippet
-                print(f"  - No main content, using snippet: {url}")
-        except Exception as e:
-            print(f"  Scrape failed for {url}: {e}")
-        return doc
-
-    def dedupe_sources(self, search_batches: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Deduplicate search results by URL"""
-        seen, out = set(), []
-        for batch in search_batches:
-            for item in batch.get("results", []):
-                url = item.get("url")
-                if not url: continue
-                if url in seen: continue
-                seen.add(url)
-                out.append(item)
-        return out
-
-    def get_segment_prompts(self, segment_name: str) -> Dict[str, str]:
-        """Loads all relevant prompts for a given segment."""
-        prompts = {}
-        try:
-            config_dir = Path(__file__).parent / 'config' / 'prompts'
-            synthesis_prompt_path = config_dir / 'synthesis_prompt.txt'
-            with open(synthesis_prompt_path, 'r') as f:
-                prompts['synthesis'] = f.read()
-            return prompts
-        except FileNotFoundError as e:
-            print(f"Error: Prompt file not found - {e}")
-            return {'synthesis': "Analyze docs and generate content themes in JSON."}
-
-    async def synthesize_insights(self, mission: str, segment_name: str, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Use Gemini to synthesize insights from scraped docs"""
-        prompts = self.get_segment_prompts(segment_name)
-        synthesis_template = prompts.get('synthesis')
-
-        # Load segment description from the main config file
-        try:
-            config_path = Path(__file__).parent / 'config' / 'intelligence_config.json'
-            with open(config_path, 'r') as f:
-                full_config = json.load(f)
-            segment_config = next((s for s in full_config.get("monthly_run", {}).get("segments", []) if s["name"] == segment_name), None)
-            segment_description = segment_config.get("description", "No description provided.") if segment_config else "N/A"
-        except Exception as e:
-            print(f"Could not load segment description: {e}")
-            segment_description = "N/A"
-
-        combined_content = ""
-        for doc in docs:
-            content = (doc.get('passages') or [doc.get('content',' Snippet not available')])
-            if content:
-                combined_content += f"URL: {doc.get('url', 'N/A')}\\nTitle: {doc.get('title', 'N/A')}\\nContent Snippet:\\n{content[0][:2000]}\\n\\n---\\n\\n"
-
-        final_prompt = synthesis_template.format(
-            segment_name=segment_name,
-            segment_description=segment_description,
-            combined_content=combined_content
+    @classmethod
+    def from_tavily(cls, result: TavilyResult) -> "ResearchSource":
+        return cls(
+            title=result.title,
+            url=result.url,
+            snippet=result.snippet,
+            score=result.score,
         )
 
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "title": self.title,
+            "url": self.url,
+            "snippet": self.snippet,
+            "score": self.score,
+        }
+
+
+class AgentResearcher:
+    """Agent-based research engine using Tavily + Firecrawl + Gemini."""
+
+    def __init__(
+        self,
+        *,
+        gemini_client: Optional[GeminiClient] = None,
+        tavily_client: Optional[TavilyApiClient] = None,
+        firecrawl_client: Optional[AsyncFirecrawlClient] = None,
+        prompts_dir: Optional[Path | str] = None,
+    ) -> None:
+        self.gemini = gemini_client or GeminiClient()
+        self.tavily = tavily_client or TavilyApiClient()
+        self.firecrawl = firecrawl_client or AsyncFirecrawlClient()
+
+        self.prompts_dir = Path(
+            prompts_dir or Path(__file__).parent / "config" / "prompts"
+        )
+        self.flash_model = self.gemini.default_model
+        self.pro_model = os.environ.get("MODEL_PRO", self.flash_model)
+
+    # ------------------------------------------------------------------
+    # Prompt helpers
+    # ------------------------------------------------------------------
+    def _load_prompt(self, filename: str) -> str:
+        path = self.prompts_dir / filename
+        if not path.exists():
+            raise FileNotFoundError(f"Prompt template not found: {path}")
+        return path.read_text(encoding="utf-8")
+
+    def _load_intelligence_config(self) -> Dict[str, Any]:
+        config_path = Path(__file__).parent / "config" / "intelligence_config.json"
+        if not config_path.exists():
+            return {}
         try:
-            resp = self.client.models.generate_content(
-                model=self.pro_model,
-                contents=final_prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    temperature=0.4,
-                    max_output_tokens=2048,
-                ),
+            return json.loads(config_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {}
+
+    def _get_segment_config(self, segment_name: str) -> Dict[str, Any]:
+        config = self._load_intelligence_config()
+        segments = config.get("monthly_run", {}).get("segments", [])
+        return next((s for s in segments if s.get("name") == segment_name), {})
+
+    def get_planner_prompt(self, segment_name: str) -> str:
+        """Construct the planner prompt from base + segment configuration."""
+
+        current_year = datetime.now().year
+        config_dir = self.prompts_dir
+
+        try:
+            base_template = self._load_prompt("planner_base.txt")
+        except FileNotFoundError:
+            return (
+                "You are a research planner. Return a JSON array of useful web "
+                "search queries for the given mission."
             )
-            text = (resp.text or "").strip()
 
-            # Extract JSON array from the response
-            json_match = re.search(r"\[\s*\{.*\}\s*\]", text, re.DOTALL)
-            if json_match:
-                data = json.loads(json_match.group(0))
-                return {"content_themes": data}
-            else:
-                raise ValueError("Could not parse JSON array from synthesis response.")
+        segment_slug = segment_name.lower().replace(" ", "_")
+        segment_file = config_dir / f"segment_{segment_slug}.json"
+        if not segment_file.exists():
+            segment_file = config_dir / "segment_smb_leaders.json"
 
-        except Exception as e:
-            print(f"Synthesis failed: {e}")
+        try:
+            segment_config = json.loads(segment_file.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError):
+            segment_config = {}
+
+        priorities = "\n".join(f"- {item}" for item in segment_config.get("priorities", []))
+        focus_areas = "\n".join(f"- {item}" for item in segment_config.get("focus_areas", []))
+
+        formatted_rules: List[str] = []
+        for rule in segment_config.get("rules", []):
+            formatted_rules.append(
+                f"- {rule.format(current_year=current_year, past_year_1=current_year - 1, past_year_2=current_year - 2)}"
+            )
+
+        return base_template.format(
+            current_year=current_year,
+            audience=segment_config.get("audience", ""),
+            priorities=priorities,
+            focus_areas=focus_areas,
+            rules="\n".join(formatted_rules),
+        )
+
+    # ------------------------------------------------------------------
+    # Core research workflow
+    # ------------------------------------------------------------------
+    async def plan_queries(self, mission: str, segment_name: str, max_queries: int = 10) -> List[str]:
+        planner_context = self.get_planner_prompt(segment_name)
+
+        try:
+            response = self.gemini.generate_json_response(
+                "agent_research_planner_prompt.txt",
+                {
+                    "planner_context": planner_context,
+                    "mission": mission,
+                    "max_queries": max_queries,
+                },
+                model=self.flash_model,
+                temperature=0.3,
+                max_output_tokens=1024,
+            )
+        except GeminiClientError as exc:
+            print(f"Query planning failed: {exc}")
+            return [mission]
+
+        payload = response.data
+        if isinstance(payload, dict):
+            candidates = payload.get("queries")
+        else:
+            candidates = payload
+
+        queries: List[str] = []
+        for item in candidates or []:
+            if isinstance(item, str) and item.strip():
+                queries.append(item.strip())
+        return queries[:max_queries] or [mission]
+
+    async def tavily_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        try:
+            results = await asyncio.to_thread(
+                self.tavily.search,
+                query,
+                max_results=max_results,
+            )
+        except TavilyClientError as exc:
+            print(f"Tavily search failed for '{query}': {exc}")
+            return {"results": []}
+
+        return {"results": [ResearchSource.from_tavily(r).to_dict() for r in results]}
+
+    async def scrape_url(self, doc: Dict[str, Any]) -> Dict[str, Any]:
+        url = doc.get("url")
+        if not url:
+            return doc
+
+        scrape_result: ScrapeResult = await self.firecrawl.scrape(url=url)
+        if scrape_result.success and scrape_result.markdown:
+            doc["passages"] = [scrape_result.markdown]
+        else:
+            doc["passages"] = [doc.get("snippet") or doc.get("content") or ""]
+            if scrape_result.error:
+                doc["scrape_error"] = scrape_result.error
+        return doc
+
+    def dedupe_sources(self, search_batches: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seen: set[str] = set()
+        deduped: List[Dict[str, Any]] = []
+        for batch in search_batches:
+            for item in batch.get("results", []):
+                url = item.get("url") if isinstance(item, dict) else None
+                if not url or url in seen:
+                    continue
+                seen.add(url)
+                deduped.append(item)
+        return deduped
+
+    def synthesize_insights(self, mission: str, segment_name: str, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
+        template_name = "synthesis_prompt.txt"
+        if not (self.prompts_dir / template_name).exists():
+            print("Synthesis prompt template missing; skipping insight generation.")
             return {"content_themes": []}
 
-    async def run_segment_research(self, segment_name: str, max_queries: int = 8, max_results_per_query: int = 5) -> Dict[str, Any]:
-        """Run complete research pipeline for a segment"""
-        # Load the mission from the main config file
-        try:
-            config_path = Path(__file__).parent / 'config' / 'intelligence_config.json'
-            with open(config_path, 'r') as f:
-                full_config = json.load(f)
-            segment_config = next((s for s in full_config.get("monthly_run", {}).get("segments", []) if s["name"] == segment_name), {})
-            mission = segment_config.get("research_focus", f"Research current trends for {segment_name}.")
-        except Exception as e:
-            print(f"Could not load mission from config: {e}")
-            mission = f"Research current trends and insights for {segment_name} audience."
+        segment_config = self._get_segment_config(segment_name)
+        segment_description = segment_config.get("description", "")
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        result = {
-            "segment_name": segment_name, "mission": mission, "timestamp": timestamp,
-            "started_at": datetime.now().isoformat(), "queries": [], "sources": [],
-            "content_themes": [], "status": "started"
+        combined_chunks = []
+        for doc in docs:
+            body = (doc.get("passages") or [doc.get("snippet") or ""])[0]
+            combined_chunks.append(
+                f"URL: {doc.get('url', 'N/A')}\nTitle: {doc.get('title', 'N/A')}\nContent Snippet:\n{body[:2000]}\n\n---\n"
+            )
+
+        prompt_context = {
+            "segment_name": segment_name,
+            "segment_description": segment_description,
+            "combined_content": "\n".join(combined_chunks),
         }
 
         try:
-            print(f"Planning queries for {segment_name}...")
+            response = self.gemini.generate_json_response(
+                template_name,
+                prompt_context,
+                model=self.pro_model,
+                temperature=0.4,
+                max_output_tokens=2048,
+            )
+        except GeminiClientError as exc:
+            print(f"Synthesis failed: {exc}")
+            return {"content_themes": []}
+
+        data = response.data
+        if isinstance(data, list):
+            return {"content_themes": data}
+        return {"content_themes": []}
+
+    async def run_segment_research(
+        self,
+        segment_name: str,
+        *,
+        max_queries: int = 8,
+        max_results_per_query: int = 5,
+    ) -> Dict[str, Any]:
+        segment_config = self._get_segment_config(segment_name)
+        mission = segment_config.get(
+            "research_focus",
+            f"Research current trends and insights for {segment_name}.",
+        )
+
+        timestamp = datetime.utcnow().isoformat()
+        result: Dict[str, Any] = {
+            "segment_name": segment_name,
+            "mission": mission,
+            "timestamp": timestamp,
+            "status": "started",
+            "queries": [],
+            "sources": [],
+            "content_themes": [],
+        }
+
+        try:
             queries = await self.plan_queries(mission, segment_name, max_queries)
             result["queries"] = queries
 
-            print(f"Searching with Tavily...")
-            search_tasks = [self.tavily_search(q, max_results_per_query) for q in queries]
+            search_tasks = [self.tavily_search(query, max_results_per_query) for query in queries]
             search_batches = await asyncio.gather(*search_tasks)
+            deduped_sources = self.dedupe_sources(search_batches)
+            result["sources"] = deduped_sources
 
-            docs = self.dedupe_sources(search_batches)
-            result["sources"] = docs
-            print(f"Found {len(docs)} unique sources, scraping...")
-
-            scrape_tasks = [self.scrape_url(doc) for doc in docs]
+            scrape_tasks = [self.scrape_url(dict(source)) for source in deduped_sources]
             scraped_docs = await asyncio.gather(*scrape_tasks)
+            successful = [doc for doc in scraped_docs if doc.get("passages") and doc["passages"][0]]
 
-            successful_scrapes = [d for d in scraped_docs if d.get('passages') and d['passages'][0]]
-            print(f"Successfully scraped {len(successful_scrapes)}/{len(docs)} sources")
-
-            if successful_scrapes:
-                print(f"Synthesizing insights...")
-                synthesis = await self.synthesize_insights(mission, segment_name, successful_scrapes)
+            if successful:
+                synthesis = self.synthesize_insights(mission, segment_name, successful)
                 result.update(synthesis)
 
-            result.update({
-                "completed_at": datetime.now().isoformat(),
-                "status": "completed",
-                "stats": {
-                    "queries_generated": len(queries), "sources_found": len(docs),
-                    "sources_scraped": len(successful_scrapes), "themes_generated": len(result.get("content_themes", []))
-                }
-            })
+            result["status"] = "completed"
+            result["completed_at"] = datetime.utcnow().isoformat()
+            result["stats"] = {
+                "queries_generated": len(queries),
+                "sources_found": len(deduped_sources),
+                "sources_scraped": len(successful),
+                "themes_generated": len(result.get("content_themes", [])),
+            }
+            return result
+        except Exception as exc:  # noqa: BLE001
+            result["status"] = "failed"
+            result["error"] = str(exc)
+            result["completed_at"] = datetime.utcnow().isoformat()
             return result
 
-        except Exception as e:
-            result.update({"error": str(e), "status": "failed", "completed_at": datetime.now().isoformat()})
-            return result

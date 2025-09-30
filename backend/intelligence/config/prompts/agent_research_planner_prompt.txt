@@ -1,0 +1,8 @@
+{planner_context}
+
+Mission: {mission}
+
+Instructions:
+- Produce at most {max_queries} focused web search queries that will uncover recent, high-signal information.
+- Return the queries as a pure JSON array of strings. Do not include any additional text.
+- Prioritise recency (last 12 months), authoritative sources, and perspectives relevant to Outstaffer's global hiring and EOR audience.

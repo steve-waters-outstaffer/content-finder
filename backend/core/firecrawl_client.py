@@ -1,127 +1,194 @@
-"""Firecrawl client wrapper for search, scraping, and extraction"""
-import json
+"""Typed Firecrawl client wrappers for synchronous and async workflows."""
+
+from __future__ import annotations
+
+import os
+from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
-from typing import List, Dict, Any, Optional
-from firecrawl import Firecrawl
+from typing import Any, Dict, Iterable, List, Optional
+
+from firecrawl import AsyncFirecrawl, Firecrawl
+
+
+class FirecrawlClientError(RuntimeError):
+    """Raised when Firecrawl fails to return a usable response."""
+
+
+@dataclass(slots=True)
+class WebDocument:
+    """Normalised representation of web content returned by Firecrawl."""
+
+    url: str
+    title: str = ""
+    description: str = ""
+    markdown: str = ""
+    html: str = ""
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> "WebDocument":
+        if hasattr(payload, "model_dump"):
+            raw = payload.model_dump()
+        elif isinstance(payload, dict):
+            raw = payload
+        else:
+            raw = getattr(payload, "__dict__", {})
+
+        return cls(
+            url=str(raw.get("url") or ""),
+            title=str(raw.get("title") or ""),
+            description=str(raw.get("description") or ""),
+            markdown=str(raw.get("markdown") or ""),
+            html=str(raw.get("html") or ""),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "url": self.url,
+            "title": self.title,
+            "description": self.description,
+            "markdown": self.markdown,
+            "html": self.html,
+        }
+
+
+@dataclass(slots=True)
+class ScrapeResult:
+    """Structured result for a scraped page."""
+
+    url: str
+    success: bool
+    markdown: str = ""
+    html: str = ""
+    title: str = ""
+    description: str = ""
+    error: Optional[str] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "url": self.url,
+            "success": self.success,
+            "markdown": self.markdown,
+            "html": self.html,
+            "title": self.title,
+            "description": self.description,
+            "error": self.error,
+            "scraped_at": datetime.utcnow().isoformat(),
+        }
 
 
 class FirecrawlClient:
-    """Wrapper for Firecrawl operations"""
-    
-    def __init__(self, api_key: Optional[str] = None):
-        """Initialize Firecrawl client"""
-        self.client = Firecrawl(api_key=api_key)
-    
+    """Synchronous Firecrawl client used by batch pipelines."""
+
+    def __init__(self, api_key: Optional[str] = None) -> None:
+        self.api_key = api_key or os.environ.get("FIRECRAWL_API_KEY")
+        if not self.api_key:
+            raise FirecrawlClientError("FIRECRAWL_API_KEY not configured.")
+        self._client = Firecrawl(api_key=self.api_key)
+
     def search(self, query: str, limit: int = 15) -> Dict[str, Any]:
-        """Search web for content"""
-        result = self.client.search(query=query, limit=limit)
-        
-        # Convert Pydantic models to dicts for JSON serialization
-        results_list = []
-        if hasattr(result, 'web') and result.web:
-            for item in result.web:
-                if hasattr(item, 'model_dump'):
-                    results_list.append(item.model_dump())
-                elif hasattr(item, '__dict__'):
-                    results_list.append(item.__dict__)
-                else:
-                    # Fallback for simple objects
-                    results_list.append({
-                        'url': getattr(item, 'url', ''),
-                        'title': getattr(item, 'title', ''),
-                        'description': getattr(item, 'description', ''),
-                    })
-        
+        try:
+            response = self._client.search(query=query, limit=limit)
+        except Exception as exc:  # noqa: BLE001
+            raise FirecrawlClientError(f"Firecrawl search failed: {exc}") from exc
+
+        items: Iterable[Any] = getattr(response, "web", [])
+        results = [WebDocument.from_payload(item).to_dict() for item in items]
         return {
-            'query': query,
-            'results': results_list,
-            'timestamp': datetime.now().strftime("%Y%m%d_%H%M%S")
+            "query": query,
+            "results": results,
+            "timestamp": datetime.utcnow().isoformat(),
         }
-    
-    def scrape_urls(self, urls: List[str], formats: List[str] = None) -> List[Dict[str, Any]]:
-        """Scrape multiple URLs"""
-        if formats is None:
-            formats = ["markdown", "html"]
-        
-        results = []
+
+    def scrape_urls(self, urls: Iterable[str]) -> List[Dict[str, Any]]:
+        results: List[Dict[str, Any]] = []
         for url in urls:
             try:
-                doc = self.client.scrape(url, formats=formats)
-                
-                result = {
-                    'url': url,
-                    'scraped_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-                    'success': True
-                }
-                
-                if hasattr(doc, 'markdown') and doc.markdown:
-                    result['markdown'] = doc.markdown
-                if hasattr(doc, 'html') and doc.html:
-                    result['html'] = doc.html
-                if hasattr(doc, 'title'):
-                    result['title'] = doc.title
-                if hasattr(doc, 'description'):
-                    result['description'] = doc.description
-                
-                results.append(result)
-                
-            except Exception as e:
-                results.append({
-                    'url': url,
-                    'scraped_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-                    'success': False,
-                    'error': str(e)
-                })
-        
+                doc = self._client.scrape(url, formats=["markdown", "html"])
+                document = WebDocument.from_payload(doc)
+                results.append(
+                    ScrapeResult(
+                        url=url,
+                        success=True,
+                        markdown=document.markdown,
+                        html=document.html,
+                        title=document.title,
+                        description=document.description,
+                    ).to_dict()
+                )
+            except Exception as exc:  # noqa: BLE001 - continue processing remaining URLs
+                results.append(
+                    ScrapeResult(
+                        url=url,
+                        success=False,
+                        error=str(exc),
+                    ).to_dict()
+                )
         return results
-    
-    def extract_structured(self, urls: List[str], prompt: str = None, schema: Dict = None) -> Dict[str, Any]:
-        """Extract structured data from URLs"""
-        if prompt is None:
-            prompt = "Extract key insights about hiring trends, challenges, and strategies for SMBs"
-        
-        if schema is None:
-            schema = {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string", "description": "Article title"},
-                    "summary": {"type": "string", "description": "Executive summary of the content"},
-                    "key_insights": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "List of key insights and trends mentioned"
-                    },
-                    "challenges_mentioned": {
-                        "type": "array", 
-                        "items": {"type": "string"},
-                        "description": "Hiring challenges or pain points discussed"
-                    },
-                    "strategies_solutions": {
-                        "type": "array",
-                        "items": {"type": "string"}, 
-                        "description": "Strategies, solutions, or recommendations provided"
-                    },
-                    "statistics": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                        "description": "Important statistics, percentages, or data points"
-                    },
-                    "relevance_to_eor": {"type": "string", "description": "How this content relates to EOR/global hiring services"}
-                },
-                "required": ["title", "summary", "key_insights"]
-            }
-        
+
+    def extract_structured(self, urls: Iterable[str], *, prompt: Optional[str] = None, schema: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        extraction_prompt = prompt or "Extract key insights about hiring trends, challenges, and strategies for SMBs"
+        extraction_schema = schema or {
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "summary": {"type": "string"},
+                "key_insights": {"type": "array", "items": {"type": "string"}},
+            },
+            "required": ["title", "summary", "key_insights"],
+        }
+
         try:
-            result = self.client.extract(urls=urls, prompt=prompt, schema=schema)
-            return {
-                'success': True,
-                'data': result.model_dump() if hasattr(result, 'model_dump') else result,
-                'extracted_at': datetime.now().strftime("%Y%m%d_%H%M%S")
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'error': str(e),
-                'extracted_at': datetime.now().strftime("%Y%m%d_%H%M%S")
-            }
+            response = self._client.extract(urls=list(urls), prompt=extraction_prompt, schema=extraction_schema)
+        except Exception as exc:  # noqa: BLE001
+            raise FirecrawlClientError(f"Firecrawl extract failed: {exc}") from exc
+
+        payload = response.model_dump() if hasattr(response, "model_dump") else response
+        return {
+            "success": True,
+            "data": payload,
+            "extracted_at": datetime.utcnow().isoformat(),
+        }
+
+
+class AsyncFirecrawlClient:
+    """Async Firecrawl client tailored for the research agent."""
+
+    def __init__(self, api_key: Optional[str] = None) -> None:
+        self.api_key = api_key or os.environ.get("FIRECRAWL_API_KEY")
+        if not self.api_key:
+            raise FirecrawlClientError("FIRECRAWL_API_KEY not configured.")
+        self._client = AsyncFirecrawl(api_key=self.api_key)
+
+    async def scrape(
+        self,
+        url: str,
+        *,
+        only_main_content: bool = True,
+    ) -> ScrapeResult:
+        try:
+            response = await self._client.scrape(
+                url=url,
+                params={"pageOptions": {"onlyMainContent": only_main_content}},
+            )
+        except Exception as exc:  # noqa: BLE001
+            return ScrapeResult(url=url, success=False, error=str(exc))
+
+        document = WebDocument.from_payload(response)
+        return ScrapeResult(
+            url=url,
+            success=True,
+            markdown=document.markdown,
+            html=document.html,
+            title=document.title,
+            description=document.description,
+        )
+
+
+__all__ = [
+    "FirecrawlClient",
+    "AsyncFirecrawlClient",
+    "FirecrawlClientError",
+    "ScrapeResult",
+    "WebDocument",
+]
+
