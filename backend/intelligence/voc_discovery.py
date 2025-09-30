@@ -180,11 +180,17 @@ def fetch_reddit_posts(
     segment_config: Dict[str, Any],
     api_key: Optional[str],
     segment_name: str,
+    log_callback: Optional[callable] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """Fetch high-signal Reddit posts for a segment.
 
     Returns a tuple of (posts, warnings).
     """
+    
+    def log(message: str, level: str = "info"):
+        """Helper to log if callback provided"""
+        if log_callback:
+            log_callback(message, level)
 
     subreddits: Sequence[str] = segment_config.get("subreddits", [])
     if not subreddits:
@@ -207,6 +213,8 @@ def fetch_reddit_posts(
             "sort": filters.sort,
         }
 
+        log(f"Fetching r/{subreddit} (timeframe={filters.time_range}, sort={filters.sort})")
+
         try:
             response = requests.get(
                 SCRAPECREATORS_SUBREDDIT_URL,
@@ -219,6 +227,7 @@ def fetch_reddit_posts(
             warning = f"Failed to fetch subreddit '{subreddit}': {exc}"
             logger.warning(warning)
             warnings.append(warning)
+            log(f"r/{subreddit}: API fetch failed - {exc}", "error")
             continue
 
         payload = response.json() if response.content else {}
@@ -233,7 +242,10 @@ def fetch_reddit_posts(
                 raw_posts = [child.get("data", {}) for child in payload["data"].get("children", [])]
         elif isinstance(payload, list):
             raw_posts = payload
-
+        
+        log(f"r/{subreddit}: Fetched {len(raw_posts)} raw posts from API")
+        
+        subreddit_passed = 0
         for post in raw_posts:
             post_id = str(post.get("id", "")).strip()
             if not post_id or post_id in processed_ids:
@@ -244,6 +256,8 @@ def fetch_reddit_posts(
 
             if score < filters.min_score or comment_count < filters.min_comments:
                 continue
+            
+            subreddit_passed += 1
 
             curated_posts.append(
                 {
@@ -254,11 +268,164 @@ def fetch_reddit_posts(
                     "num_comments": comment_count,
                     "url": post.get("url") or post.get("full_link"),
                     "content_snippet": (post.get("selftext") or "")[:300],
+                    "created_utc": post.get("created_utc", 0),
+                    "stickied": post.get("stickied", False),
                 }
             )
+        
+        log(f"r/{subreddit}: {subreddit_passed} posts passed engagement filters (score≥{filters.min_score}, comments≥{filters.min_comments})")
 
     _mark_posts_processed(segment_name, (post["id"] for post in curated_posts))
     return curated_posts, warnings
+
+
+def _python_filter_posts(
+    posts: List[Dict[str, Any]],
+    min_score: int = 20,
+    min_comments: int = 5,
+    max_age_days: int = 30,
+) -> Tuple[List[Dict[str, Any]], Dict[str, List[Dict[str, Any]]]]:
+    """Filter posts before AI scoring to reduce noise.
+    
+    Returns tuple of (filtered_posts, rejected_posts_by_reason)
+    
+    Removes:
+    - Stickied mod posts
+    - Low engagement posts
+    - Old posts beyond max_age_days
+    """
+    filtered = []
+    rejected = {
+        "stickied": [],
+        "low_engagement": [],
+        "too_old": [],
+    }
+    current_time = time.time()
+    
+    for post in posts:
+        # Skip stickied posts
+        if post.get("stickied"):
+            rejected["stickied"].append({
+                "id": post.get("id"),
+                "title": post.get("title", "")[:80],
+                "subreddit": post.get("subreddit"),
+            })
+            continue
+            
+        # Check engagement
+        if post.get("score", 0) < min_score or post.get("num_comments", 0) < min_comments:
+            rejected["low_engagement"].append({
+                "id": post.get("id"),
+                "title": post.get("title", "")[:80],
+                "subreddit": post.get("subreddit"),
+                "score": post.get("score", 0),
+                "comments": post.get("num_comments", 0),
+            })
+            continue
+            
+        # Check age
+        created_utc = post.get("created_utc", 0)
+        if created_utc > 0:
+            age_days = (current_time - created_utc) / 86400
+            if age_days > max_age_days:
+                rejected["too_old"].append({
+                    "id": post.get("id"),
+                    "title": post.get("title", "")[:80],
+                    "subreddit": post.get("subreddit"),
+                    "age_days": round(age_days, 1),
+                })
+                continue
+        
+        filtered.append(post)
+    
+    return filtered, rejected
+
+
+def _batch_prescore_posts(
+    posts: List[Dict[str, Any]],
+    segment_config: Dict[str, Any],
+    segment_name: str,
+) -> Tuple[List[Tuple[Dict[str, Any], float]], List[Dict[str, Any]]]:
+    """Pre-score multiple posts in a single AI call.
+    
+    Returns tuple of (scored_posts sorted desc, rejected_low_scores)
+    scored_posts: list of (post, score) tuples
+    rejected_low_scores: posts that scored below threshold
+    """
+    if not posts:
+        return [], []
+        
+    gemini_client = _get_gemini_client()
+    if not gemini_client:
+        logger.warning("Gemini client unavailable for batch prescoring")
+        return [(post, 5.0) for post in posts], []  # Default neutral score
+    
+    # Build compact summary of all posts
+    posts_summary = []
+    for i, post in enumerate(posts):
+        title = post.get("title", "")
+        snippet = post.get("content_snippet", "")[:150]
+        subreddit = post.get("subreddit", "")
+        posts_summary.append(
+            f"POST {i}:\n"
+            f"Subreddit: r/{subreddit}\n"
+            f"Title: {title}\n"
+            f"Snippet: {snippet}\n"
+        )
+    
+    try:
+        prompt_template = _load_prompt_template("voc_reddit_batch_prescore.txt")
+        prompt = prompt_template.format(
+            segment_name=segment_name,
+            audience=segment_config.get("audience", ""),
+            posts_summary="\n".join(posts_summary),
+        )
+        
+        response = gemini_client.models.generate_content(
+            model=DEFAULT_GEMINI_MODEL,  # Use Flash for fast prescoring
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+                max_output_tokens=2048,
+            ),
+        )
+        
+        parsed = _normalise_json_response(response.text or "")
+        
+        if not isinstance(parsed, list):
+            logger.warning("Batch prescore returned unexpected format")
+            return [(post, 5.0) for post in posts], []
+        
+        # Match scores to posts
+        scored_posts = []
+        for item in parsed:
+            post_index = item.get("post_index")
+            score = item.get("relevance_score", 5.0)
+            
+            if post_index is not None and 0 <= post_index < len(posts):
+                scored_posts.append((posts[post_index], float(score)))
+        
+        # Sort by score descending
+        scored_posts.sort(key=lambda x: x[1], reverse=True)
+        
+        # Track rejected (low scoring) posts
+        SCORE_THRESHOLD = 6.0
+        rejected_low_scores = [
+            {
+                "id": post.get("id"),
+                "title": post.get("title", "")[:80],
+                "subreddit": post.get("subreddit"),
+                "score": round(score, 1),
+            }
+            for post, score in scored_posts if score < SCORE_THRESHOLD
+        ]
+        
+        return scored_posts, rejected_low_scores
+        
+    except Exception as exc:
+        logger.warning("Batch prescoring failed: %s", exc)
+        return [(post, 5.0) for post in posts], []
 
 
 def _load_prompt_template(filename: str) -> str:
@@ -500,6 +667,11 @@ def generate_curated_queries(
         else:
             trends_lines.append(f"- {query}: steady interest over time")
 
+    # Early exit: skip Gemini call if there's insufficient data to curate
+    if not pain_point_lines and not trends_lines:
+        logger.info("Skipping curated query generation - no meaningful data available")
+        return [], []  # Return empty with no warnings - this is expected, not an error
+    
     pain_points = "\n".join(pain_point_lines) if pain_point_lines else "- No AI-analyzed Reddit posts were available."
     trends_summary = "\n".join(trends_lines) if trends_lines else "- Google Trends data unavailable."
 
@@ -526,9 +698,18 @@ def generate_curated_queries(
                 max_output_tokens=1024,
             ),
         )
-        parsed = _normalise_json_response(response.text or "")
+        
+        # Handle empty response from Gemini gracefully
+        if not response.text or not response.text.strip():
+            logger.info("Gemini returned empty response - likely no actionable insights to curate")
+            return [], []  # Return empty without warning - this is acceptable
+        
+        parsed = _normalise_json_response(response.text)
         if isinstance(parsed, list):
             cleaned_queries = [str(item).strip() for item in parsed if str(item).strip()]
+            if not cleaned_queries:
+                logger.info("Gemini returned empty list - no queries generated")
+                return [], []
             return cleaned_queries, []
         return [], ["Gemini returned unexpected structure for curated queries generation."]
     except Exception as exc:  # noqa: BLE001 - capture parsing and API issues
@@ -637,6 +818,8 @@ def run_voc_discovery(
     results: Dict[str, Any] = {
         "segment": segment_name,
         "reddit_posts": [],
+        "reddit_posts_rejected": {},  # Posts filtered out by Python filters
+        "reddit_posts_low_score": [],  # Posts with AI scores <6.0
         "google_trends": [],
         "curated_queries": [],
         "warnings": warnings,
@@ -699,13 +882,59 @@ def run_voc_discovery(
                     segment_config,
                     reddit_api_key,
                     segment_name,
+                    log_callback=log_progress,
                 )
                 log_progress(
-                    f"Found {len(fetched_reddit_posts)} Reddit posts for analysis", "success"
+                    f"Total fetched: {len(fetched_reddit_posts)} posts across all subreddits"
                 )
                 for warning_msg in reddit_warnings:
                     log_progress(warning_msg, "warning")
                     warnings.append(warning_msg)
+                
+                # Phase 1: Python filtering
+                if fetched_reddit_posts:
+                    filtered_posts, rejected_filter = _python_filter_posts(fetched_reddit_posts)
+                    
+                    # Log filtering results
+                    total_rejected = sum(len(v) for v in rejected_filter.values())
+                    log_progress(
+                        f"Python filter: {len(filtered_posts)} passed, {total_rejected} rejected "
+                        f"({len(rejected_filter['stickied'])} stickied, "
+                        f"{len(rejected_filter['low_engagement'])} low engagement, "
+                        f"{len(rejected_filter['too_old'])} too old)"
+                    )
+                    
+                    # Store rejected for review
+                    results["reddit_posts_rejected"] = rejected_filter
+                    
+                    # Phase 2: Batch AI prescoring
+                    if filtered_posts:
+                        scored_posts, rejected_scores = _batch_prescore_posts(
+                            filtered_posts,
+                            segment_config,
+                            segment_name
+                        )
+                        
+                        if scored_posts:
+                            top_scores = [f"{score:.1f}" for _, score in scored_posts[:5]]
+                            log_progress(
+                                f"Batch prescore complete: Top 5 scores = [{', '.join(top_scores)}]"
+                            )
+                            
+                            # Store low-scoring posts
+                            if rejected_scores:
+                                results["reddit_posts_low_score"] = rejected_scores
+                                log_progress(f"Filtered out {len(rejected_scores)} posts with scores <6.0")
+                        
+                        # Take top 5 for deep analysis
+                        top_posts = [post for post, score in scored_posts[:5]]
+                        log_progress(
+                            f"Selected top {len(top_posts)} posts for detailed comment analysis"
+                        )
+                        fetched_reddit_posts = top_posts
+                    else:
+                        fetched_reddit_posts = []
+                        
             except Exception as exc:  # noqa: BLE001 - capture fetch-level errors
                 error_msg = f"Failed to fetch Reddit posts: {exc}"
                 log_progress(error_msg, "error")

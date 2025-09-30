@@ -1,17 +1,26 @@
 You are assisting with Voice of Customer research for the segment "{segment_name}".
-Audience context: {audience}
-Source: r/{subreddit}
 
-Review the following Reddit discussion (original post plus selected top comments). Identify the central customer pain point that matters for this audience.
+COMPANY CONTEXT: Outstaffer provides recruitment-led global hiring solutions powered by an integrated EOR platform. We deliver talent first, then scale with technology. Our primary focus is filling roles fast with quality APAC talent (40-80% cost savings), then using our platform to manage the full employment lifecycle.
+
+AUDIENCE CONTEXT: {audience}
+SOURCE: r/{subreddit}
+
+Review the following Reddit discussion (original post plus selected top comments). Identify the central customer pain point that matters for this audience and assess whether Outstaffer's services could address it.
 
 Discussion:
 {discussion_text}
 
+SCORING CRITERIA (0-10):
+- Direct Alignment (0-4 points): Does this discuss hiring, talent acquisition, global employment, compliance, or workforce management challenges?
+- Segment Fit (0-3 points): Is this problem specifically relevant to {segment_name}?
+- Outstaffer Solution Match (0-3 points): Can our recruitment, EOR, AI screening, or HRIS platform directly solve this problem?
+
 Return a compact JSON object with the following keys only:
 {{
   "relevance_score": float between 0 and 10 (higher means the post is highly relevant to the audience),
-  "reasoning": short explanation (2-3 sentences max) referencing evidence from the discussion,
-  "identified_pain_point": concise description (one sentence) of the core problem described by the community.
+  "reasoning": short explanation (2-3 sentences max) referencing evidence from the discussion and explaining which Outstaffer service could help,
+  "identified_pain_point": concise description (one sentence) of the core problem described by the community,
+  "outstaffer_solution_angle": "Which of our services (Recruitment/EOR/AI Screening/HRIS) could solve this, or 'None' if not applicable"
 }}
 
 Do not wrap the JSON in markdown fences and avoid extra commentary.

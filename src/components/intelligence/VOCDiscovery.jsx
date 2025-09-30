@@ -505,6 +505,10 @@ const VOCDiscovery = () => {
                                     <Typography variant="body2" color="text.secondary">
                                         Curated queries will appear once AI analysis is available.
                                     </Typography>
+                                ) : !curatedQueries.length && isDiscoveryStarted ? (
+                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                        No actionable insights identified this time. Check back after new discussions emerge in your target communities.
+                                    </Typography>
                                 ) : (
                                     <Stack spacing={1}>
                                         {curatedQueries.map((query, index) => (

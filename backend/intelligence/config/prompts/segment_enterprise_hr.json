@@ -21,5 +21,31 @@
     "Uncover insights that address large-scale operational challenges.",
     "Queries MUST focus on the last 12 months or the current year ({current_year}).",
     "Output a pure JSON array of strings (queries). No extra text."
-  ]
+  ],
+  "subreddits": ["humanresources", "recruiting", "management"],
+  "search_keywords": [
+    "AI in HR",
+    "global payroll",
+    "EOR vs PEO",
+    "employee engagement",
+    "HR compliance"
+  ],
+  "reddit_filters": {
+    "min_score": 20,
+    "min_comments": 10,
+    "time_range": "month",
+    "sort": "top"
+  },
+  "google_trends": {
+    "primary_keywords": [
+      "AI in recruitment",
+      "global workforce management",
+      "employee retention strategies",
+      "employer of record",
+      "HR technology stack"
+    ],
+    "comparison_keyword": "talent acquisition",
+    "timeframe": "today 12-m",
+    "geo": "US"
+  }
 }
