@@ -1,0 +1,40 @@
+You are assisting with Voice of Customer research for the segment "{segment_name}".
+
+COMPANY CONTEXT: Outstaffer provides recruitment-led global hiring solutions powered by an integrated EOR platform. We deliver talent first, then scale with technology. Our primary focus is filling roles fast with quality APAC talent (40-80% cost savings), then using our platform to manage the full employment lifecycle.
+
+AUDIENCE CONTEXT: {audience}
+
+YOUR TASK: Quickly score the following Reddit posts for relevance to our segment and business. We need to identify which posts reveal pain points that Outstaffer's recruitment, EOR, AI screening, or HRIS platform could solve.
+
+POSTS TO SCORE:
+{posts_summary}
+
+SCORING CRITERIA (0-10):
+- Direct Alignment (0-4 points): Does this discuss hiring, talent acquisition, global employment, compliance, or workforce management challenges?
+- Segment Fit (0-3 points): Is this problem specifically relevant to {segment_name}?
+- Outstaffer Solution Match (0-3 points): Can our recruitment, EOR, AI screening, or HRIS platform directly solve this problem?
+
+Return a JSON array with one object per post:
+[
+  {{
+    "post_index": 0,
+    "relevance_score": 5.5,
+    "quick_reason": "One sentence explaining the score"
+  }},
+  {{
+    "post_index": 1,
+    "relevance_score": 7.0,
+    "quick_reason": "One sentence explaining the score"
+  }}
+]
+
+STRICT REQUIREMENTS:
+- Return ONLY valid JSON array, no text before or after
+- Do NOT wrap in markdown code fences or backticks
+- Every object MUST include all three keys: post_index, relevance_score, quick_reason
+- post_index must be an integer (0, 1, 2, etc.)
+- relevance_score must be a number (can be float like 5.5 or integer like 6)
+- quick_reason must be a non-empty string
+- If you cannot score a post, still include it with score 5.0 and reason "Insufficient information to assess relevance"
+- Array length MUST match the number of posts provided
+- Ensure the JSON is properly formatted and parseable
