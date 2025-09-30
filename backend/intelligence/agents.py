@@ -27,12 +27,17 @@ You will be given a research goal. Your process is as follows:
             system_prompt=self.system_prompt
         )
         try:
-            # The Gemini client should be configured to return JSON
-            planned_queries = self.gemini_client.parse_json_response(response_text)
-            return planned_queries.get("queries", [])
+            parsed = self.gemini_client.parse_json_response(response_text)
         except Exception as e:
             print(f"Error parsing agent's search plan: {e}")
             return []
+
+        if isinstance(parsed, dict):
+            queries = parsed.get("queries", [])
+        else:
+            queries = parsed
+
+        return [str(item) for item in queries if isinstance(item, str)]
 
     def conduct_research(self, research_goal: str) -> list[dict]:
         """
@@ -51,13 +56,13 @@ You will be given a research goal. Your process is as follows:
             print(f"🔎 Agent is searching for: '{query}'")
             results = self.tavily_client.search(query)
             for result in results:
-                if result['url'] not in unique_urls:
+                if result.url not in unique_urls:
                     all_results.append({
-                        "title": result.get('title', 'No Title'),
-                        "url": result.get('url'),
-                        "score": result.get('score', 0)
+                        "title": result.title or 'No Title',
+                        "url": result.url,
+                        "score": result.score,
                     })
-                    unique_urls.add(result['url'])
+                    unique_urls.add(result.url)
 
         # Sort results by score to prioritize relevance
         all_results.sort(key=lambda x: x['score'], reverse=True)

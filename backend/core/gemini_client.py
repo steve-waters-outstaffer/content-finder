@@ -1,174 +1,250 @@
-"""Gemini API client for content analysis"""
+"""High-level Gemini client used across the intelligence pipeline."""
+
+from __future__ import annotations
+
 import json
 import os
-from datetime import datetime
+import re
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import Any, Dict, Optional
 
 from google import genai
 from google.genai import types
 
 
+class GeminiClientError(RuntimeError):
+    """Raised when the Gemini API cannot return a usable response."""
+
+
+@dataclass(slots=True)
+class GeminiJsonResponse:
+    """Container for a parsed Gemini JSON response."""
+
+    raw_text: str
+    data: Any
+
+
 class GeminiClient:
-    """Wrapper for Gemini API operations"""
+    """Shared Gemini wrapper that provides consistent prompt + JSON handling."""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        """Initialize Gemini client"""
-        self.api_key = api_key or os.environ.get('GEMINI_API_KEY')
-        self.default_model = model or os.environ.get('MODEL', 'gemini-2.5-flash')
+    def __init__(
+        self,
+        *,
+        api_key: Optional[str] = None,
+        default_model: Optional[str] = None,
+        prompt_dir: Optional[Path | str] = None,
+    ) -> None:
+        self.api_key = api_key or os.environ.get("GEMINI_API_KEY")
+        self.default_model = default_model or os.environ.get("MODEL", "gemini-2.5-flash")
+        self.prompt_dir = Path(
+            prompt_dir
+            or Path(__file__).resolve().parent.parent
+            / "intelligence"
+            / "config"
+            / "prompts"
+        )
         self._client: Optional[genai.Client] = None
-        if self.api_key:
-            self._client = genai.Client(api_key=self.api_key)
 
-    def _get_client(self) -> Optional[genai.Client]:
-        """Return a configured Gemini client if an API key is available."""
-        if not self._client and self.api_key:
+    # ---------------------------------------------------------------------
+    # Core helpers
+    # ---------------------------------------------------------------------
+    def _get_client(self) -> genai.Client:
+        if not self.api_key:
+            raise GeminiClientError("GEMINI_API_KEY not configured.")
+
+        if self._client is None:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def synthesize_content(
+    def _load_prompt(self, template_name: str) -> str:
+        template_path = self.prompt_dir / template_name
+        if not template_path.exists():
+            raise GeminiClientError(f"Prompt template not found: {template_path}")
+        return template_path.read_text(encoding="utf-8")
+
+    @staticmethod
+    def _clean_json_payload(raw_text: str) -> str:
+        cleaned = raw_text.strip()
+        if not cleaned:
+            raise GeminiClientError("Gemini returned an empty response.")
+
+        # Remove Markdown code fences.
+        cleaned = cleaned.replace("```json", "").replace("```", "").strip()
+
+        if cleaned.startswith("{") or cleaned.startswith("["):
+            return cleaned
+
+        # Try to extract the first JSON object/array from the text.
+        match = re.search(r"(\{.*\}|\[.*\])", cleaned, re.DOTALL)
+        if not match:
+            raise GeminiClientError("Unable to locate JSON payload in Gemini response.")
+        return match.group(1)
+
+    @staticmethod
+    def parse_json_response(raw_text: str) -> Any:
+        """Parse Gemini text into JSON with improved resilience."""
+
+        payload = GeminiClient._clean_json_payload(raw_text)
+        try:
+            parsed = json.loads(payload)
+        except json.JSONDecodeError as exc:  # noqa: BLE001 - expose parsing issues
+            raise GeminiClientError(f"Gemini returned invalid JSON: {exc}") from exc
+        return parsed
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+    def generate_json_response(
         self,
-        query: str,
-        contents: List[Dict[str, str]],
+        template_name: str,
+        context: Dict[str, Any],
+        *,
         model: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Uses Gemini to synthesize an article from multiple sources."""
-        client = self._get_client()
-        if not client:
-            return {'success': False, 'error': 'GEMINI_API_KEY not set'}
+        temperature: float = 0.3,
+        max_output_tokens: int = 2048,
+        system_prompt: Optional[str] = None,
+    ) -> GeminiJsonResponse:
+        """Render a prompt template and request a JSON response from Gemini."""
 
-        # Prepare the source material for the prompt
-        source_material = ""
-        for i, doc in enumerate(contents):
-            source_material += f"--- Source {i+1} ---\n"
-            source_material += f"URL: {doc.get('url', 'N/A')}\n"
-            source_material += f"Title: {doc.get('title', 'N/A')}\n"
-            source_material += f"Content:\n{doc.get('markdown', '')[:2000]}\n\n" # Truncate
-
-        # --- Load prompt from external file ---
+        prompt_template = self._load_prompt(template_name)
         try:
-            prompt_path = Path(__file__).parent.parent / 'intelligence' / 'config' / 'prompts' / 'synthesize_article_prompt.txt'
-            with open(prompt_path, 'r', encoding='utf-8') as f:
-                prompt_template = f.read()
+            prompt = prompt_template.format(**context)
+        except KeyError as exc:  # noqa: BLE001 - configuration level error
+            missing = exc.args[0]
+            raise GeminiClientError(
+                f"Prompt context missing required key '{missing}' for template '{template_name}'."
+            ) from exc
 
-            prompt = prompt_template.format(query=query, source_material=source_material)
-        except Exception as e:
-            return {'success': False, 'error': f'Failed to load prompt template: {str(e)}'}
-        # -----------------------------------------
-
-        chosen_model = model or self.default_model
+        if system_prompt:
+            contents: Any = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(system_prompt.strip())],
+                ),
+                types.Content(role="user", parts=[types.Part.from_text(prompt.strip())]),
+            ]
+        else:
+            contents = prompt
 
         try:
-            response = client.models.generate_content(
-                model=chosen_model,
-                contents=prompt,
+            response = self._get_client().models.generate_content(
+                model=model or self.default_model,
+                contents=contents,
                 config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    max_output_tokens=4096,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
                     response_mime_type="application/json",
                 ),
             )
+        except Exception as exc:  # noqa: BLE001 - surface API issues with context
+            raise GeminiClientError(f"Gemini API error: {exc}") from exc
 
-            raw_text = (response.text or "").strip()
-            cleaned_text = raw_text.replace('```json', '').replace('```', '').strip()
-            if not cleaned_text.startswith('{'):
-                json_start = cleaned_text.find('{')
-                json_end = cleaned_text.rfind('}') + 1
-                if json_start == -1 or json_end <= json_start:
-                    raise ValueError("No JSON object found in the AI response.")
-                cleaned_text = cleaned_text[json_start:json_end]
+        parsed = self.parse_json_response(response.text or "")
+        return GeminiJsonResponse(raw_text=response.text or "", data=parsed)
 
-            parsed_result = json.loads(cleaned_text)
+    def generate_text(
+        self,
+        *,
+        prompt: str,
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 2048,
+        system_prompt: Optional[str] = None,
+        response_mime_type: str = "text/plain",
+    ) -> str:
+        """Generate raw text from Gemini while reusing configuration plumbing."""
 
-            if parsed_result.get("article"):
-                return {
-                    'success': True,
-                    'article': parsed_result.get("article"),
-                    'outstaffer_analysis': parsed_result.get("outstaffer_analysis"),
-                    'linkedin_post': parsed_result.get("linkedin_post"),
-                }
-            return {'success': False, 'error': 'No article was generated by the AI.'}
-        except (json.JSONDecodeError, ValueError) as e:
-            return {
-                'success': False,
-                'error': f'Gemini response parsing error: {str(e)}',
-            }
-        except Exception as e:
-            return {
-                'success': False,
-                'error': f'Gemini API error: {str(e)}',
-            }
+        if system_prompt:
+            contents: Any = [
+                types.Content(role="user", parts=[types.Part.from_text(system_prompt.strip())]),
+                types.Content(role="user", parts=[types.Part.from_text(prompt.strip())]),
+            ]
+        else:
+            contents = prompt
 
+        try:
+            response = self._get_client().models.generate_content(
+                model=model or self.default_model,
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    response_mime_type=response_mime_type,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GeminiClientError(f"Gemini API error: {exc}") from exc
+
+        return (response.text or "").strip()
+
+    # ------------------------------------------------------------------
+    # Legacy helpers retained for backwards compatibility
+    # ------------------------------------------------------------------
+    def synthesize_content(
+        self,
+        query: str,
+        contents: list[dict[str, str]],
+        *,
+        model: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Compose an article synthesis response leveraging the template system."""
+
+        source_material = []
+        for idx, doc in enumerate(contents, start=1):
+            chunk = [f"--- Source {idx} ---"]
+            chunk.append(f"URL: {doc.get('url', 'N/A')}")
+            chunk.append(f"Title: {doc.get('title', 'N/A')}")
+            markdown = doc.get("markdown", "")
+            chunk.append(f"Content:\n{markdown[:2000]}")
+            source_material.append("\n".join(chunk))
+
+        response = self.generate_json_response(
+            "synthesize_article_prompt.txt",
+            {"query": query, "source_material": "\n\n".join(source_material)},
+            model=model,
+            temperature=0.7,
+            max_output_tokens=4096,
+        )
+
+        return {
+            "success": True,
+            **response.data,
+        }
 
     def analyze_content(
         self,
         content: str,
-        prompt: str = None,
+        prompt: Optional[str] = None,
+        *,
         model: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Analyze content with Gemini"""
-        client = self._get_client()
-        if not client:
-            return {
-                'success': False,
-                'error': 'GEMINI_API_KEY not set',
-                'analyzed_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-            }
+        """Analyze a block of content with an optional custom prompt."""
 
-        # Default analysis prompt tailored for Outstaffer
-        if prompt is None:
-            prompt = f"""
-            Analyze this scraped web content and provide:
+        analysis_prompt = prompt or (
+            "Analyze this scraped web content and provide:\n\n"
+            "1. Executive summary (2-3 sentences).\n"
+            "2. Key insights (3-5 bullets).\n"
+            "3. Outstaffer relevance (paragraph).\n"
+            "4. Content angle ideas (3 suggestions).\n"
+            "5. Action items (2-3 points).\n\n"
+            "CONTENT TO ANALYSE:\n{content}"
+        )
 
-            1. **Executive Summary** (2-3 sentences): What's the core message?
-            
-            2. **Key Insights** (3-5 bullet points): Main takeaways relevant to recruitment/EOR industry
-            
-            3. **Outstaffer Relevance** (paragraph): How does this content relate to Outstaffer's business model (recruitment-led global hiring + EOR platform serving US staffing firms and Australian B2B companies)?
-            
-            4. **Content Angle Ideas** (3 suggestions): How could this be adapted into blog posts or thought leadership for Outstaffer?
-            
-            5. **Action Items** (2-3 points): Specific ways Outstaffer could leverage these insights
-            
-            Keep analysis concise, practical, and focused on business applications. Avoid fluff.
-            
-            CONTENT TO ANALYZE:
-            {content}
-            """
-        
-        chosen_model = model or self.default_model
+        rendered_prompt = analysis_prompt.format(content=content)
 
-        try:
-            response = client.models.generate_content(
-                model=chosen_model,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.7,
-                    top_k=40,
-                    top_p=0.95,
-                    max_output_tokens=2048,
-                ),
-            )
+        generated = self.generate_text(
+            prompt=rendered_prompt,
+            model=model,
+            temperature=0.7,
+            max_output_tokens=2048,
+        )
 
-            generated_text = (response.text or "").strip()
-            if generated_text:
-                return {
-                    'success': True,
-                    'analysis': generated_text,
-                    'raw_response': response.model_dump(),
-                    'analyzed_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-                    'model': chosen_model,
-                }
-            return {
-                'success': False,
-                'error': 'No content generated by Gemini',
-                'raw_response': response.model_dump(),
-                'analyzed_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-            }
+        return {
+            "success": bool(generated),
+            "analysis": generated,
+        }
 
-        except Exception as e:
-            return {
-                'success': False,
-                'error': f'Gemini API error: {str(e)}',
-                'analyzed_at': datetime.now().strftime("%Y%m%d_%H%M%S"),
-            }
+
+__all__ = ["GeminiClient", "GeminiClientError", "GeminiJsonResponse"]
+

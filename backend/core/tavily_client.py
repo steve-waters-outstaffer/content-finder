@@ -1,29 +1,89 @@
-"""Tavily API client wrapper for search operations"""
+"""Typed Tavily client wrapper used by the intelligence stack."""
+
+from __future__ import annotations
+
 import os
-from tavily import TavilyClient as Tavily
+from dataclasses import dataclass
+from typing import Iterable, List, Optional
 
-class TavilyApiClient:
-    """Wrapper for Tavily search operations."""
-    def __init__(self, api_key: str = None):
-        if api_key is None:
-            api_key = os.getenv("TAVILY_API_KEY")
-        if not api_key:
-            raise ValueError("Tavily API key not provided or set in TAVILY_API_KEY environment variable.")
-        self.client = Tavily(api_key=api_key)
+from tavily import TavilyClient as TavilySDK
 
-    def search(self, query: str, search_depth: str = "advanced", max_results: int = 7) -> list[dict]:
-        """
-        Performs a search using Tavily and returns a list of results.
-        """
+
+class TavilyClientError(RuntimeError):
+    """Raised when Tavily returns an invalid response."""
+
+
+@dataclass(slots=True)
+class TavilyResult:
+    """Structured Tavily search result."""
+
+    title: str
+    url: str
+    snippet: str
+    score: float
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "TavilyResult":
+        return cls(
+            title=str(payload.get("title") or ""),
+            url=str(payload.get("url") or ""),
+            snippet=str(payload.get("content") or payload.get("snippet") or ""),
+            score=float(payload.get("score") or payload.get("relevance_score") or 0.0),
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "title": self.title,
+            "url": self.url,
+            "snippet": self.snippet,
+            "score": self.score,
+        }
+
+
+class TavilyClient:
+    """Lightweight Tavily API wrapper with consistent error handling."""
+
+    def __init__(self, api_key: Optional[str] = None) -> None:
+        self.api_key = api_key or os.environ.get("TAVILY_API_KEY")
+        if not self.api_key:
+            raise TavilyClientError("TAVILY_API_KEY not configured.")
+        self._client = TavilySDK(api_key=self.api_key)
+
+    def search(
+        self,
+        query: str,
+        *,
+        search_depth: str = "advanced",
+        max_results: int = 7,
+        include_domains: Optional[Iterable[str]] = None,
+        exclude_domains: Optional[Iterable[str]] = None,
+    ) -> List[TavilyResult]:
         try:
-            response = self.client.search(
+            response = self._client.search(
                 query=query,
                 search_depth=search_depth,
                 max_results=max_results,
-                include_domains=[],
-                exclude_domains=[]
+                include_domains=list(include_domains or []),
+                exclude_domains=list(exclude_domains or []),
             )
-            return response.get('results', [])
-        except Exception as e:
-            print(f"An error occurred during Tavily search: {e}")
+        except Exception as exc:  # noqa: BLE001 - network/SDK errors should surface clearly
+            raise TavilyClientError(f"Tavily API error: {exc}") from exc
+
+        raw_results = response.get("results") if isinstance(response, dict) else None
+        if not raw_results:
             return []
+
+        parsed: List[TavilyResult] = []
+        for raw in raw_results:
+            if not isinstance(raw, dict):
+                continue
+            parsed.append(TavilyResult.from_payload(raw))
+        return parsed
+
+
+# Backwards compatible alias used by older modules
+TavilyApiClient = TavilyClient
+
+
+__all__ = ["TavilyClient", "TavilyApiClient", "TavilyResult", "TavilyClientError"]
+
