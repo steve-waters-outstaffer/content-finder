@@ -17,10 +17,19 @@ SCORING CRITERIA (0-10):
 
 Return a compact JSON object with the following keys only:
 {{
-  "relevance_score": float between 0 and 10 (higher means the post is highly relevant to the audience),
-  "reasoning": short explanation (2-3 sentences max) referencing evidence from the discussion and explaining which Outstaffer service could help,
-  "identified_pain_point": concise description (one sentence) of the core problem described by the community,
-  "outstaffer_solution_angle": "Which of our services (Recruitment/EOR/AI Screening/HRIS) could solve this, or 'None' if not applicable"
+  "relevance_score": 6.5,
+  "reasoning": "Short explanation (2-3 sentences max) referencing evidence from the discussion and explaining which Outstaffer service could help",
+  "identified_pain_point": "Concise description (one sentence) of the core problem described by the community",
+  "outstaffer_solution_angle": "Recruitment" OR "EOR" OR "AI Screening" OR "HRIS" OR "None"
 }}
 
-Do not wrap the JSON in markdown fences and avoid extra commentary.
+STRICT REQUIREMENTS:
+- Return ONLY valid JSON object, no text before or after
+- Do NOT wrap in markdown code fences or backticks
+- All four keys MUST be present: relevance_score, reasoning, identified_pain_point, outstaffer_solution_angle
+- relevance_score must be a number between 0 and 10 (can be float like 6.5)
+- reasoning must be a non-empty string (2-3 sentences max)
+- identified_pain_point must be a non-empty string (one sentence)
+- outstaffer_solution_angle must be one of: "Recruitment", "EOR", "AI Screening", "HRIS", or "None"
+- If you cannot analyze the discussion, return: {{"relevance_score": 5.0, "reasoning": "Insufficient context to determine relevance to Outstaffer's services", "identified_pain_point": "Unable to determine specific pain point from discussion", "outstaffer_solution_angle": "None"}}
+- Ensure the JSON is properly formatted and parseable

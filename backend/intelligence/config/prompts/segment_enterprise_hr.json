@@ -22,13 +22,27 @@
     "Queries MUST focus on the last 12 months or the current year ({current_year}).",
     "Output a pure JSON array of strings (queries). No extra text."
   ],
-  "subreddits": ["humanresources", "recruiting", "management"],
+  "subreddits": [
+    "recruiting",
+    "recruitinghell",
+    "humanresources",
+    "recruitmentagencies",
+    "headhunting",
+    "workforce",
+    "management",
+    "jobs",
+    "recruitment",
+    "forhire",
+    "resumes"
+  ],
   "search_keywords": [
-    "AI in HR",
-    "global payroll",
-    "EOR vs PEO",
-    "employee engagement",
-    "HR compliance"
+    "global talent acquisition challenges",
+    "AI in enterprise recruitment",
+    "enterprise EOR adoption",
+    "distributed workforce management strategies",
+    "global payroll compliance",
+    "employer branding competitive markets",
+    "HRIS integration ROI"
   ],
   "reddit_filters": {
     "min_score": 20,
@@ -38,13 +52,13 @@
   },
   "google_trends": {
     "primary_keywords": [
-      "AI in recruitment",
-      "global workforce management",
-      "employee retention strategies",
-      "employer of record",
-      "HR technology stack"
+      "global talent acquisition",
+      "AI recruitment",
+      "enterprise EOR",
+      "distributed workforce",
+      "HRIS integration"
     ],
-    "comparison_keyword": "talent acquisition",
+    "comparison_keyword": "recruitment agency",
     "timeframe": "today 12-m",
     "geo": "US"
   }

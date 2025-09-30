@@ -391,10 +391,21 @@ def _batch_prescore_posts(
             ),
         )
         
-        parsed = _normalise_json_response(response.text or "")
+        # Check for empty response
+        if not response.text:
+            logger.error("GEMINI RETURNED EMPTY RESPONSE for batch prescore")
+            logger.error("Prompt preview: %s...", prompt[:500])
+            logger.error("Number of posts attempted: %d", len(posts))
+            return [(post, 5.0) for post in posts], []
         
-        if not isinstance(parsed, list):
-            logger.warning("Batch prescore returned unexpected format")
+        logger.debug("Raw Gemini batch prescore response (first 500 chars): %s", response.text[:500])
+        
+        parsed = _normalise_json_response(response.text)
+        
+        # Validate structure before processing
+        if not _validate_batch_prescore_response(parsed, len(posts)):
+            logger.error("Invalid batch prescore response structure")
+            logger.error("Raw response (first 1000 chars): %s", response.text[:1000])
             return [(post, 5.0) for post in posts], []
         
         # Match scores to posts
@@ -503,22 +514,35 @@ def _normalise_json_response(response_text: str) -> Any:
     except json.JSONDecodeError as exc:
         logger.warning("Initial JSON parse failed: %s", exc)
 
-        # Try to extract JSON from markdown code blocks
-        json_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", response_text, re.DOTALL)
+        # Try to extract JSON from markdown code blocks (both objects and arrays)
+        # Match both {...} and [...]
+        json_match = re.search(
+            r"```(?:json)?\s*(\{.*?\}|\[.*?\])\s*```",
+            response_text,
+            re.DOTALL
+        )
         if json_match:
             try:
                 return json.loads(json_match.group(1))
             except json.JSONDecodeError:
                 pass
 
-        # Try to find first complete JSON object
+        # Try to find first complete JSON object or array
         try:
+            # Try object first
             start = response_text.index("{")
             end = response_text.rindex("}") + 1
             potential_json = response_text[start:end]
             return json.loads(potential_json)
         except (ValueError, json.JSONDecodeError):
-            pass
+            # Try array
+            try:
+                start = response_text.index("[")
+                end = response_text.rindex("]") + 1
+                potential_json = response_text[start:end]
+                return json.loads(potential_json)
+            except (ValueError, json.JSONDecodeError):
+                pass
 
         # Last resort - try to fix common issues
         cleaned = response_text.strip().replace("\n", " ").replace("\\n", "\\\\n")
@@ -528,6 +552,76 @@ def _normalise_json_response(response_text: str) -> Any:
             raise ValueError(
                 f"Could not parse JSON after multiple attempts: {response_text[:200]}"
             ) from final_exc
+
+
+def _validate_batch_prescore_response(parsed: Any, expected_count: int) -> bool:
+    """Validate batch prescore response structure and log specific issues"""
+    if not isinstance(parsed, list):
+        logger.error("Batch prescore response not a list: %s", type(parsed))
+        return False
+    
+    if len(parsed) != expected_count:
+        logger.warning(
+            "Batch prescore returned %d items, expected %d",
+            len(parsed),
+            expected_count
+        )
+    
+    for i, item in enumerate(parsed):
+        if not isinstance(item, dict):
+            logger.error("Batch prescore item %d not a dict: %s", i, type(item))
+            return False
+        
+        required_keys = {"post_index", "relevance_score", "quick_reason"}
+        missing = required_keys - set(item.keys())
+        if missing:
+            logger.error("Batch prescore item %d missing keys: %s", i, missing)
+            return False
+            
+        if not isinstance(item.get("post_index"), int):
+            logger.error(
+                "Batch prescore item %d post_index not int: %s",
+                i,
+                type(item.get("post_index"))
+            )
+            return False
+            
+        if not isinstance(item.get("relevance_score"), (int, float)):
+            logger.error(
+                "Batch prescore item %d relevance_score not numeric: %s",
+                i,
+                type(item.get("relevance_score"))
+            )
+            return False
+    
+    return True
+
+
+def _validate_reddit_analysis_response(parsed: Any) -> bool:
+    """Validate reddit analysis response structure and log specific issues"""
+    if not isinstance(parsed, dict):
+        logger.error("Reddit analysis response not a dict: %s", type(parsed))
+        return False
+    
+    required_keys = {
+        "relevance_score",
+        "reasoning", 
+        "identified_pain_point",
+        "outstaffer_solution_angle"
+    }
+    missing = required_keys - set(parsed.keys())
+    if missing:
+        logger.error("Reddit analysis missing keys: %s", missing)
+        return False
+    
+    if not isinstance(parsed.get("relevance_score"), (int, float)):
+        logger.error(
+            "Reddit analysis relevance_score not numeric: %s",
+            type(parsed.get("relevance_score"))
+        )
+        return False
+    
+    return True
 
 
 def get_post_details_and_score(
@@ -609,14 +703,33 @@ def get_post_details_and_score(
                 max_output_tokens=1024,
             ),
         )
-        parsed = _normalise_json_response(response.text or "")
-        if isinstance(parsed, dict):
-            enriched_post["ai_analysis"] = parsed
-        else:
-            warnings.append("Gemini returned unexpected structure for Reddit analysis.")
+        
+        # Check for empty response
+        if not response.text:
+            warning = f"GEMINI RETURNED EMPTY RESPONSE for post '{enriched_post.get('id')}'"
+            logger.error(warning)
+            logger.error("Prompt preview: %s...", prompt[:500])
+            logger.error("Post title: %s", enriched_post.get('title', 'N/A'))
+            warnings.append(warning)
+            return enriched_post, warnings
+        
+        logger.debug("Raw Gemini analysis response (first 300 chars): %s", response.text[:300])
+        
+        parsed = _normalise_json_response(response.text)
+        
+        # Validate structure before using
+        if not _validate_reddit_analysis_response(parsed):
+            warning = f"Invalid analysis response for post '{enriched_post.get('id')}'"
+            logger.error(warning)
+            logger.error("Raw response (first 500 chars): %s", response.text[:500])
+            warnings.append(warning)
+            return enriched_post, warnings
+        
+        enriched_post["ai_analysis"] = parsed
+        
     except Exception as exc:  # noqa: BLE001 - capture parsing and API issues
         warning = f"Gemini Reddit analysis failed for post '{enriched_post.get('id')}': {exc}"
-        logger.warning(warning)
+        logger.error(warning)
         warnings.append(warning)
 
     return enriched_post, warnings

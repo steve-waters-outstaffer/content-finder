@@ -20,13 +20,26 @@
     "Queries should uncover what attracts and retains top Australian tech talent.",
     "Output a pure JSON array of strings (queries). No extra text."
   ],
-  "subreddits": ["ausdev", "cscareerquestions", "programming", "australia"],
+  "subreddits": [
+    "ausdev",
+    "webdev",
+    "datascience",
+    "techcareers",
+    "cscareerquestionsOCE",
+    "remotework",
+    "digitalnomad",
+    "australia",
+    "melbourne"
+  ],
   "search_keywords": [
-    "developer jobs australia",
-    "tech scene melbourne vs sydney",
-    "atlassian wfh",
-    "canva salary",
-    "contracting vs permanent developer"
+    "Australian software developer salary benchmark",
+    "developer burnout Australia",
+    "remote developer jobs Australia",
+    "Australian developer career aspirations",
+    "preferred programming languages Australia",
+    "upskilling courses Australian developers",
+    "Australian tech company culture",
+    "developer work life balance"
   ],
   "reddit_filters": {
     "min_score": 15,
@@ -36,11 +49,11 @@
   },
   "google_trends": {
     "primary_keywords": [
+      "software developer salary Australia",
       "developer burnout",
       "remote developer jobs Australia",
-      "tech salaries Australia",
-      "full stack developer salary",
-      "learn rust"
+      "developer work life balance",
+      "upskilling courses for developers"
     ],
     "comparison_keyword": "software engineer jobs",
     "timeframe": "today 12-m",

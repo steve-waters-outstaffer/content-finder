@@ -23,13 +23,27 @@
     "Queries MUST focus on the last 12 months or the current year ({current_year}). Avoid using past years like {past_year_1} or {past_year_2}.",
     "Output a pure JSON array of strings (queries). No extra text."
   ],
-  "subreddits": ["recruiting", "startups", "smallbusiness", "humanresources"],
+  "subreddits": [
+    "startups",
+    "entrepreneur",
+    "business",
+    "smallbusiness",
+    "recruiting",
+    "humanresources",
+    "jobs",
+    "recruitment",
+    "forhire",
+    "resumes"
+  ],
   "search_keywords": [
     "SMB hiring challenges",
     "can't find developers",
-    "recruitment cost",
-    "offshore hiring",
-    "reference checks useless"
+    "cost of hiring",
+    "cost of bad hire",
+    "offshore hiring small business",
+    "reference checks effectiveness",
+    "founder led recruiting",
+    "time to fill SMB roles"
   ],
   "reddit_filters": {
     "min_score": 20,
@@ -41,11 +55,11 @@
     "primary_keywords": [
       "SMB hiring challenges",
       "can't find developers",
-      "recruitment cost",
+      "cost of hiring",
       "offshore hiring",
-      "reference checks"
+      "founder led recruiting"
     ],
-    "comparison_keyword": "recruitment agency",
+    "comparison_keyword": "recruitment software",
     "timeframe": "today 12-m",
     "geo": "US"
   }
