@@ -10,6 +10,7 @@ from api.scrape import scrape_bp
 from api.analyze import analyze_bp
 from api.synthesize import synthesize_bp
 from api.intelligence import intelligence_bp
+from api.intelligence_stages import stages_bp
 from core.logging_config import configure_logging
 
 # Load environment variables
@@ -34,6 +35,7 @@ def create_app():
     app.register_blueprint(analyze_bp, url_prefix='/api')
     app.register_blueprint(synthesize_bp, url_prefix='/api')
     app.register_blueprint(intelligence_bp, url_prefix='/api')
+    app.register_blueprint(stages_bp, url_prefix='/api')  # Staged VOC discovery
     
     @app.route('/')
     def health_check():

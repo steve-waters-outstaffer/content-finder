@@ -24,6 +24,12 @@
         "description": "Software developers and tech companies in Australia",
         "research_focus": "Identify the primary motivations, career aspirations, and key challenges for senior software developers in Australia, particularly regarding remote and international work opportunities. Research their preferences for company culture, technology stacks, and what they value most from a modern employer. The goal is to generate insights that help companies attract and retain top Australian tech talent.",
         "content_goal": "Content for Australian developer community"
+      },
+      {
+        "name": "Outstaffer AI Recruiter",
+        "description": "SMB & Mid-Market teams frustrated with slow, manual hiring, and teams seeking recruiter-quality outcomes without agency fees.",
+        "research_focus": "Investigate the impact of AI in recruitment on hiring outcomes, including time-to-hire, cost savings, and candidate experience. The goal is to find data and trends that validate the Outstaffer AI Recruiter's value proposition.",
+        "content_goal": "Sales enablement and marketing content"
       }
     ]
   },

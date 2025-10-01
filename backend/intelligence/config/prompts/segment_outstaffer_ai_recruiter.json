@@ -1,0 +1,67 @@
+{
+  "audience": "SMB and mid‑market HR and talent acquisition teams who want recruiter‑quality outcomes without agency fees or headcount growth.",
+  "priorities": [
+    "Reducing time‑to‑hire",
+    "Minimising manager time spent on hiring",
+    "Improving candidate experience and acceptance rates",
+    "Reducing recruitment costs compared to agencies",
+    "Improving hiring outcomes and early retention",
+    "Ensuring fair, structured and unbiased screening"
+  ],
+  "focus_areas": [
+    "Comparative research on AI‑led vs human‑led screening, including metrics such as job offer rates, start rates and early retention (e.g., +12% more offers and +18% more starts with AI interviews【965549783057828†L282-L373】)",
+    "Studies on candidate preference for AI interviews (e.g., 78% of applicants choose AI when given the choice【965549783057828†L282-L375】) and its impact on employer branding",
+    "Evidence of bias reduction in AI‑driven interviews (e.g., ~45% fewer reports of gender bias【965549783057828†L282-L373】) and best practices for fairness",
+    "Cost and time breakdown of traditional hiring versus AI‑managed recruitment services, including 15‑20+ hours saved per role and 90% cost savings【965549783057828†L346-L354】",
+    "Business case for managed recruitment services over adding in‑house headcount (ROI, scalability and access to recruiter oversight)",
+    "Trends in conversational AI, generative interviewing and compliance considerations over the last 12–18 months"
+  ],
+  "rules": [
+    "Prioritise independent research, case studies and industry reports published in the last 12–18 months",
+    "Quantify the value of AI‑driven recruitment (time saved, cost reductions, offer/start/retention improvements, bias reduction)",
+    "Include candidate sentiment and fairness metrics in queries",
+    "Output a pure JSON array of strings (queries). No extra text"
+  ],
+  "subreddits": [
+    "recruiting",
+    "humanresources",
+    "startups",
+    "smallbusiness",
+    "recruitinghell",
+    "artificial",
+    "machinelearning",
+    "datascience",
+    "futureofwork"
+  ],
+  "search_keywords": [
+    "AI recruitment statistics 2025",
+    "candidate preference AI interviews 2025",
+    "gender bias reduction AI interviews",
+    "AI vs human interviews outcomes",
+    "AI recruitment ROI case study",
+    "managed recruitment service cost savings",
+    "candidate experience AI interview research",
+    "time to hire improvements AI",
+    "AI recruitment retention rates",
+    "conversational AI hiring trends"
+  ],
+  "reddit_filters": {
+    "min_score": 15,
+    "min_comments": 10,
+    "time_range": "year",
+    "sort": "top"
+  },
+  "google_trends": {
+    "primary_keywords": [
+      "AI recruitment",
+      "AI interviews",
+      "candidate experience",
+      "recruitment cost savings",
+      "bias in hiring"
+    ],
+    "comparison_keyword": "recruitment agency",
+    "timeframe": "today 12-m",
+    "geo": "US"
+
+  }
+}
