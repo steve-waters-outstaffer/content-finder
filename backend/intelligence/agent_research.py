@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -15,6 +17,8 @@ from dotenv import load_dotenv
 from core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
 from core.gemini_client import GeminiClient, GeminiClientError
 from core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
+
+logger = logging.getLogger(__name__)
 
 # Load environment variables when running locally/scripts
 load_dotenv()
@@ -58,6 +62,7 @@ class AgentResearcher:
         firecrawl_client: Optional[AsyncFirecrawlClient] = None,
         prompts_dir: Optional[Path | str] = None,
     ) -> None:
+        start_time = time.perf_counter()
         self.gemini = gemini_client or GeminiClient()
         self.tavily = tavily_client or TavilyApiClient()
         self.firecrawl = firecrawl_client or AsyncFirecrawlClient()
@@ -67,6 +72,13 @@ class AgentResearcher:
         )
         self.flash_model = self.gemini.default_model
         self.pro_model = os.environ.get("MODEL_PRO", self.flash_model)
+        logger.info(
+            "AgentResearcher initialized",
+            extra={
+                "operation": "agent_init",
+                "duration_ms": round((time.perf_counter() - start_time) * 1000, 2),
+            },
+        )
 
     # ------------------------------------------------------------------
     # Prompt helpers
@@ -75,6 +87,13 @@ class AgentResearcher:
         path = self.prompts_dir / filename
         if not path.exists():
             raise FileNotFoundError(f"Prompt template not found: {path}")
+        logger.debug(
+            "Prompt loaded",
+            extra={
+                "operation": "prompt_load",
+                "prompt": filename,
+            },
+        )
         return path.read_text(encoding="utf-8")
 
     def _load_intelligence_config(self) -> Dict[str, Any]:
@@ -138,7 +157,17 @@ class AgentResearcher:
     async def plan_queries(self, mission: str, segment_name: str, max_queries: int = 10) -> List[str]:
         planner_context = self.get_planner_prompt(segment_name)
 
+        logger.info(
+            "Planning queries",
+            extra={
+                "operation": "agent_plan_queries",
+                "segment_name": segment_name,
+                "mission": mission,
+                "max_queries": max_queries,
+            },
+        )
         try:
+            start_time = time.perf_counter()
             response = self.gemini.generate_json_response(
                 "agent_research_planner_prompt.txt",
                 {
@@ -150,8 +179,16 @@ class AgentResearcher:
                 temperature=0.3,
                 max_output_tokens=1024,
             )
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
         except GeminiClientError as exc:
-            print(f"Query planning failed: {exc}")
+            logger.exception(
+                "Query planning failed",
+                extra={
+                    "operation": "agent_plan_queries",
+                    "segment_name": segment_name,
+                    "mission": mission,
+                },
+            )
             return [mission]
 
         payload = response.data
@@ -164,17 +201,52 @@ class AgentResearcher:
         for item in candidates or []:
             if isinstance(item, str) and item.strip():
                 queries.append(item.strip())
+        logger.info(
+            "Query planning completed",
+            extra={
+                "operation": "agent_plan_queries",
+                "segment_name": segment_name,
+                "count": len(queries[:max_queries] or [mission]),
+                "duration_ms": locals().get("duration_ms"),
+            },
+        )
         return queries[:max_queries] or [mission]
 
     async def tavily_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
+        logger.debug(
+            "Executing Tavily search",
+            extra={
+                "operation": "tavily_search",
+                "query": query,
+                "max_results": max_results,
+            },
+        )
         try:
+            start_time = time.perf_counter()
             results = await asyncio.to_thread(
                 self.tavily.search,
                 query,
                 max_results=max_results,
             )
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.info(
+                "Tavily search completed",
+                extra={
+                    "operation": "tavily_search",
+                    "query": query,
+                    "result_count": len(results),
+                    "duration_ms": duration_ms,
+                },
+            )
         except TavilyClientError as exc:
-            print(f"Tavily search failed for '{query}': {exc}")
+            logger.error(
+                "Tavily search failed",
+                exc_info=exc,
+                extra={
+                    "operation": "tavily_search",
+                    "query": query,
+                },
+            )
             return {"results": []}
 
         return {"results": [ResearchSource.from_tavily(r).to_dict() for r in results]}
@@ -182,20 +254,54 @@ class AgentResearcher:
     async def scrape_url(self, doc: Dict[str, Any]) -> Dict[str, Any]:
         url = doc.get("url")
         if not url:
+            logger.warning(
+                "Document missing URL for scraping",
+                extra={"operation": "firecrawl_scrape"},
+            )
             return doc
 
+        logger.debug(
+            "Scraping URL",
+            extra={
+                "operation": "firecrawl_scrape",
+                "url": url,
+            },
+        )
+        scrape_start = time.perf_counter()
         scrape_result: ScrapeResult = await self.firecrawl.scrape(url=url)
+        duration_ms = round((time.perf_counter() - scrape_start) * 1000, 2)
         if scrape_result.success and scrape_result.markdown:
             doc["passages"] = [scrape_result.markdown]
+            logger.info(
+                "Scrape succeeded",
+                extra={
+                    "operation": "firecrawl_scrape",
+                    "url": url,
+                    "duration_ms": duration_ms,
+                },
+            )
         else:
             doc["passages"] = [doc.get("snippet") or doc.get("content") or ""]
             if scrape_result.error:
                 doc["scrape_error"] = scrape_result.error
+                logger.warning(
+                    "Scrape returned fallback content",
+                    extra={
+                        "operation": "firecrawl_scrape",
+                        "url": url,
+                        "duration_ms": duration_ms,
+                        "error": scrape_result.error,
+                    },
+                )
         return doc
 
     def dedupe_sources(self, search_batches: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seen: set[str] = set()
         deduped: List[Dict[str, Any]] = []
+        logger.debug(
+            "Deduping sources",
+            extra={"operation": "agent_dedupe"},
+        )
         for batch in search_batches:
             for item in batch.get("results", []):
                 url = item.get("url") if isinstance(item, dict) else None
@@ -203,12 +309,22 @@ class AgentResearcher:
                     continue
                 seen.add(url)
                 deduped.append(item)
+        logger.info(
+            "Deduping complete",
+            extra={
+                "operation": "agent_dedupe",
+                "count": len(deduped),
+            },
+        )
         return deduped
 
     def synthesize_insights(self, mission: str, segment_name: str, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
         template_name = "synthesis_prompt.txt"
         if not (self.prompts_dir / template_name).exists():
-            print("Synthesis prompt template missing; skipping insight generation.")
+            logger.warning(
+                "Synthesis prompt template missing; skipping insight generation.",
+                extra={"operation": "agent_synthesis", "segment_name": segment_name},
+            )
             return {"content_themes": []}
 
         segment_config = self._get_segment_config(segment_name)
@@ -227,7 +343,16 @@ class AgentResearcher:
             "combined_content": "\n".join(combined_chunks),
         }
 
+        logger.info(
+            "Generating synthesis",
+            extra={
+                "operation": "agent_synthesis",
+                "segment_name": segment_name,
+                "doc_count": len(docs),
+            },
+        )
         try:
+            start_time = time.perf_counter()
             response = self.gemini.generate_json_response(
                 template_name,
                 prompt_context,
@@ -235,12 +360,28 @@ class AgentResearcher:
                 temperature=0.4,
                 max_output_tokens=2048,
             )
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
         except GeminiClientError as exc:
-            print(f"Synthesis failed: {exc}")
+            logger.exception(
+                "Synthesis failed",
+                extra={
+                    "operation": "agent_synthesis",
+                    "segment_name": segment_name,
+                },
+            )
             return {"content_themes": []}
 
         data = response.data
         if isinstance(data, list):
+            logger.info(
+                "Synthesis completed",
+                extra={
+                    "operation": "agent_synthesis",
+                    "segment_name": segment_name,
+                    "themes_generated": len(data),
+                    "duration_ms": duration_ms,
+                },
+            )
             return {"content_themes": data}
         return {"content_themes": []}
 
@@ -251,6 +392,15 @@ class AgentResearcher:
         max_queries: int = 8,
         max_results_per_query: int = 5,
     ) -> Dict[str, Any]:
+        logger.info(
+            "Starting agent research workflow",
+            extra={
+                "operation": "agent_run_segment",
+                "segment_name": segment_name,
+                "max_queries": max_queries,
+                "max_results_per_query": max_results_per_query,
+            },
+        )
         segment_config = self._get_segment_config(segment_name)
         mission = segment_config.get(
             "research_focus",
@@ -268,6 +418,7 @@ class AgentResearcher:
             "content_themes": [],
         }
 
+        workflow_start = time.perf_counter()
         try:
             queries = await self.plan_queries(mission, segment_name, max_queries)
             result["queries"] = queries
@@ -293,10 +444,26 @@ class AgentResearcher:
                 "sources_scraped": len(successful),
                 "themes_generated": len(result.get("content_themes", [])),
             }
+            logger.info(
+                "Agent research workflow completed",
+                extra={
+                    "operation": "agent_run_segment",
+                    "segment_name": segment_name,
+                    "duration_ms": round((time.perf_counter() - workflow_start) * 1000, 2),
+                    "stats": result["stats"],
+                },
+            )
             return result
         except Exception as exc:  # noqa: BLE001
             result["status"] = "failed"
             result["error"] = str(exc)
             result["completed_at"] = datetime.utcnow().isoformat()
+            logger.exception(
+                "Agent research workflow failed",
+                extra={
+                    "operation": "agent_run_segment",
+                    "segment_name": segment_name,
+                },
+            )
             return result
 

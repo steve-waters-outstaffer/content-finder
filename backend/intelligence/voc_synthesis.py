@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Dict, List, Sequence, Tuple
 
 from core.gemini_client import GeminiClient, GeminiClientError
@@ -14,6 +15,14 @@ def filter_high_value_posts(posts: Sequence[Dict[str, Any]], min_score: float = 
     accepted: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []
 
+    logger.debug(
+        "Filtering high value posts",
+        extra={
+            "operation": "reddit_filter",
+            "count": len(posts),
+            "min_score": min_score,
+        },
+    )
     for post in posts:
         analysis = post.get("ai_analysis") or {}
         score = analysis.get("relevance_score")
@@ -21,6 +30,24 @@ def filter_high_value_posts(posts: Sequence[Dict[str, Any]], min_score: float = 
             accepted.append(post)
         else:
             rejected.append(post)
+        logger.debug(
+            "Post %s evaluated",
+            extra={
+                "operation": "reddit_filter",
+                "post_id": post.get("id"),
+                "score": score,
+                "min_score": min_score,
+                "accepted": post in accepted,
+            },
+        )
+    logger.info(
+        "High value post filtering complete",
+        extra={
+            "operation": "reddit_filter",
+            "count": len(accepted),
+            "rejected_count": len(rejected),
+        },
+    )
     return accepted, rejected
 
 
@@ -80,27 +107,59 @@ def generate_curated_queries(
     }
 
     try:
+        start_time = time.perf_counter()
         response = gemini_client.generate_json_response(
             "voc_curated_queries_prompt.txt",
             prompt_context,
             temperature=0.3,
             max_output_tokens=1024,
         )
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
     except (GeminiClientError, FileNotFoundError) as exc:
         warning = f"Gemini curated query generation failed: {exc}"
-        logger.warning(warning)
+        logger.warning(
+            warning,
+            extra={
+                "operation": "query_generation",
+                "segment_name": segment_name,
+            },
+        )
         return [], [warning]
 
     data = response.data
     if isinstance(data, list):
         cleaned = [str(item).strip() for item in data if str(item).strip()]
+        logger.info(
+            "Curated queries generated",
+            extra={
+                "operation": "query_generation",
+                "segment_name": segment_name,
+                "count": len(cleaned),
+                "duration_ms": duration_ms,
+            },
+        )
         return cleaned, []
     if isinstance(data, dict) and isinstance(data.get("queries"), list):
         cleaned = [str(item).strip() for item in data["queries"] if str(item).strip()]
+        logger.info(
+            "Curated queries generated",
+            extra={
+                "operation": "query_generation",
+                "segment_name": segment_name,
+                "count": len(cleaned),
+                "duration_ms": duration_ms,
+            },
+        )
         return cleaned, []
 
     warning = "Gemini returned unexpected structure for curated queries generation."
-    logger.warning(warning)
+    logger.warning(
+        warning,
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+        },
+    )
     return [], [warning]
 
 
