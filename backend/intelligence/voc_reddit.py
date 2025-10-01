@@ -6,7 +6,7 @@ import json
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -267,7 +267,7 @@ class RedditDataCollector:
             extra={
                 "operation": "reddit_fetch",
                 "segment_name": segment_name,
-                "filters": filters.__dict__,
+                "filters": asdict(filters),
             },
         )
         processed_ids = self.history_store.load(segment_name)
