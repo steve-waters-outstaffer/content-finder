@@ -773,11 +773,20 @@ def analyze_sources(session_id):
                 "count": scraped_count,
             },
         )
-        synthesis_result = asyncio.run(researcher.synthesize_insights(
-            mission=session['mission'],
-            segment_name=session['segmentName'],
-            docs=successful_scrapes
-        ))
+        logger.info(f"Starting synthesis for session {session_id}")
+        logger.debug(f"Number of docs to synthesize: {len(successful_scrapes)}")
+
+        try:
+            synthesis_result = researcher.synthesize_insights(
+                mission=session['mission'],
+                segment_name=session['segmentName'],
+                docs=successful_scrapes
+            )
+            logger.info("Synthesis completed successfully")
+            logger.debug(f"Synthesis result keys: {synthesis_result.keys()}")
+        except Exception as e:  # noqa: BLE001
+            logger.error(f"Synthesis failed: {str(e)}", exc_info=True)
+            raise
 
         themes = synthesis_result.get("content_themes", [])
         session['themes'] = themes
