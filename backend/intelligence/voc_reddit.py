@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -41,8 +42,16 @@ class RedditHistoryStore:
     def create(cls) -> "RedditHistoryStore":
         try:
             client = firestore.Client()
+            logger.debug(
+                "Initialized Firestore client for history store",
+                extra={"operation": "reddit_history_init"},
+            )
         except Exception as exc:  # noqa: BLE001 - optional dependency
-            logger.warning("Firestore unavailable for VOC history: %s", exc)
+            logger.warning(
+                "Firestore unavailable for VOC history: %s",
+                exc,
+                extra={"operation": "reddit_history_init"},
+            )
             client = None
         return cls(client)
 
@@ -65,7 +74,12 @@ class RedditHistoryStore:
             for doc in collection.stream():  # type: ignore[attr-defined]
                 processed.add(doc.id)
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to load Firestore history for '%s': %s", segment_name, exc)
+            logger.warning(
+                "Failed to load Firestore history for '%s': %s",
+                segment_name,
+                exc,
+                extra={"operation": "reddit_history_load", "segment_name": segment_name},
+            )
             processed = set()
 
         self._cache[segment_name] = processed
@@ -95,7 +109,11 @@ class RedditHistoryStore:
         try:
             batch.commit()
         except Exception as exc:  # noqa: BLE001
-            logger.warning("Failed to persist Reddit history: %s", exc)
+            logger.warning(
+                "Failed to persist Reddit history: %s",
+                exc,
+                extra={"operation": "reddit_history_persist", "segment_name": segment_name},
+            )
 
 
 class RedditDataCollector:
@@ -142,6 +160,15 @@ class RedditDataCollector:
         headers = {"x-api-key": self.api_key}
         params = {"subreddit": subreddit, "timeframe": filters.time_range, "sort": filters.sort}
 
+        logger.info(
+            f"Fetching posts from r/{subreddit} with filters: {filters}",
+            extra={
+                "operation": "reddit_fetch",
+                "subreddit": subreddit,
+                "filters": params,
+            },
+        )
+        start_time = time.perf_counter()
         response = requests.get(
             SCRAPECREATORS_SUBREDDIT_URL,
             headers=headers,
@@ -149,13 +176,61 @@ class RedditDataCollector:
             timeout=30,
         )
         response.raise_for_status()
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
         payload = response.json() if response.content else {}
         if isinstance(payload, dict):
             if isinstance(payload.get("data"), list):
-                return payload["data"]
+                posts = payload["data"]
+                logger.info(
+                    "API returned %s posts from r/%s",
+                    len(posts),
+                    subreddit,
+                    extra={
+                        "operation": "reddit_fetch",
+                        "subreddit": subreddit,
+                        "duration_ms": duration_ms,
+                    },
+                )
+                logger.debug(
+                    "Sample post IDs: %s",
+                    [p.get("id") for p in posts[:3]],
+                    extra={
+                        "operation": "reddit_fetch",
+                        "subreddit": subreddit,
+                    },
+                )
+                return posts
             if isinstance(payload.get("posts"), list):
-                return payload["posts"]
+                posts = payload["posts"]
+                logger.info(
+                    "API returned %s posts from r/%s",
+                    len(posts),
+                    subreddit,
+                    extra={
+                        "operation": "reddit_fetch",
+                        "subreddit": subreddit,
+                        "duration_ms": duration_ms,
+                    },
+                )
+                logger.debug(
+                    "Sample post IDs: %s",
+                    [p.get("id") for p in posts[:3]],
+                    extra={
+                        "operation": "reddit_fetch",
+                        "subreddit": subreddit,
+                    },
+                )
+                return posts
+        logger.info(
+            "API returned 0 posts from r/%s",
+            subreddit,
+            extra={
+                "operation": "reddit_fetch",
+                "subreddit": subreddit,
+                "duration_ms": duration_ms,
+            },
+        )
         return []
 
     # ------------------------------------------------------------------
@@ -168,11 +243,33 @@ class RedditDataCollector:
         segment_config: Dict[str, Any],
         log_callback: Optional[callable] = None,
     ) -> Tuple[List[Dict[str, Any]], List[str]]:
+        logger.info(
+            "Starting Reddit fetch",
+            extra={
+                "operation": "reddit_fetch",
+                "segment_name": segment_name,
+            },
+        )
         subreddits: Sequence[str] = segment_config.get("subreddits", [])
         if not subreddits:
+            logger.warning(
+                "No subreddits configured for segment",
+                extra={
+                    "operation": "reddit_fetch",
+                    "segment_name": segment_name,
+                },
+            )
             return [], ["Segment configuration does not define any subreddits to monitor."]
 
         filters = self._parse_filters(segment_config)
+        logger.debug(
+            "Reddit filters resolved",
+            extra={
+                "operation": "reddit_fetch",
+                "segment_name": segment_name,
+                "filters": filters.__dict__,
+            },
+        )
         processed_ids = self.history_store.load(segment_name)
 
         curated: List[Dict[str, Any]] = []
@@ -187,7 +284,14 @@ class RedditDataCollector:
                 posts = self._fetch_subreddit(subreddit, filters=filters)
             except requests.RequestException as exc:
                 warning = f"Failed to fetch subreddit '{subreddit}': {exc}"
-                logger.warning(warning)
+                logger.warning(
+                    warning,
+                    extra={
+                        "operation": "reddit_fetch",
+                        "segment_name": segment_name,
+                        "subreddit": subreddit,
+                    },
+                )
                 warnings.append(warning)
                 log(f"r/{subreddit}: API fetch failed - {exc}", "error")
                 continue
@@ -198,10 +302,46 @@ class RedditDataCollector:
                 if not post_id or post_id in processed_ids:
                     continue
                 if int(post.get("score", 0)) < filters.min_score:
+                    logger.debug(
+                        "Post %s: score=%s, min_score=%s, filtered=True",
+                        post_id,
+                        post.get("score"),
+                        filters.min_score,
+                        extra={
+                            "operation": "reddit_filter",
+                            "segment_name": segment_name,
+                            "subreddit": subreddit,
+                            "post_id": post_id,
+                        },
+                    )
                     continue
                 if int(post.get("num_comments", 0)) < filters.min_comments:
+                    logger.debug(
+                        "Post %s: score=%s, min_comments=%s, filtered=True",
+                        post_id,
+                        post.get("score"),
+                        filters.min_comments,
+                        extra={
+                            "operation": "reddit_filter",
+                            "segment_name": segment_name,
+                            "subreddit": subreddit,
+                            "post_id": post_id,
+                        },
+                    )
                     continue
 
+                logger.debug(
+                    "Post %s: score=%s, min_score=%s, filtered=False",
+                    post_id,
+                    post.get("score"),
+                    filters.min_score,
+                    extra={
+                        "operation": "reddit_filter",
+                        "segment_name": segment_name,
+                        "subreddit": subreddit,
+                        "post_id": post_id,
+                    },
+                )
                 curated.append(
                     {
                         "id": post_id,
@@ -228,10 +368,19 @@ class RedditDataCollector:
     ) -> Tuple[Dict[str, Any], List[str]]:
         headers = {"x-api-key": self.api_key}
         warnings: List[str] = []
+        logger.debug(
+            "Enriching Reddit post",
+            extra={
+                "operation": "reddit_enrich",
+                "segment_name": segment_name,
+                "post_id": post.get("id"),
+            },
+        )
 
         comments_payload: Any = {}
         if post.get("url"):
             try:
+                start_time = time.perf_counter()
                 response = requests.get(
                     SCRAPECREATORS_COMMENTS_URL,
                     headers=headers,
@@ -240,9 +389,25 @@ class RedditDataCollector:
                 )
                 response.raise_for_status()
                 comments_payload = response.json() if response.content else {}
+                logger.debug(
+                    "Comments fetched",
+                    extra={
+                        "operation": "reddit_enrich",
+                        "segment_name": segment_name,
+                        "post_id": post.get("id"),
+                        "duration_ms": round((time.perf_counter() - start_time) * 1000, 2),
+                    },
+                )
             except requests.RequestException as exc:
                 warning = f"Failed to fetch comments for post '{post.get('id')}': {exc}"
-                logger.warning(warning)
+                logger.warning(
+                    warning,
+                    extra={
+                        "operation": "reddit_enrich",
+                        "segment_name": segment_name,
+                        "post_id": post.get("id"),
+                    },
+                )
                 warnings.append(warning)
 
         discussion_text = self._build_discussion_summary(post, comments_payload)
@@ -267,7 +432,14 @@ class RedditDataCollector:
                 warnings.append("Gemini returned unexpected Reddit analysis structure.")
         except (GeminiClientError, FileNotFoundError) as exc:
             warning = f"Gemini Reddit analysis failed for post '{post.get('id')}': {exc}"
-            logger.error(warning)
+            logger.error(
+                warning,
+                extra={
+                    "operation": "reddit_enrich",
+                    "segment_name": segment_name,
+                    "post_id": post.get("id"),
+                },
+            )
             warnings.append(warning)
 
         return post, warnings
@@ -322,6 +494,14 @@ def load_segment_config(segment_name: str) -> Dict[str, Any]:
     )
     if not config_path.exists():
         raise FileNotFoundError(f"No configuration found for segment '{segment_name}'.")
+    logger.debug(
+        "Segment config loaded",
+        extra={
+            "operation": "segment_config_load",
+            "segment_name": segment_name,
+            "config_path": str(config_path),
+        },
+    )
     return json.loads(config_path.read_text(encoding="utf-8"))
 
 

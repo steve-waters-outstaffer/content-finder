@@ -1,20 +1,27 @@
 """Main Flask application"""
-import os
+import logging
+
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
+
 from api.search import search_bp
 from api.scrape import scrape_bp
 from api.analyze import analyze_bp
 from api.synthesize import synthesize_bp
 from api.intelligence import intelligence_bp
+from core.logging_config import configure_logging
 
 # Load environment variables
 load_dotenv()
 
+configure_logging()
+logger = logging.getLogger(__name__)
+
 
 def create_app():
     """Create and configure Flask application"""
+    logger.info("Initializing Flask application", extra={"operation": "app_init"})
     app = Flask(__name__)
     app.config['JSON_SORT_KEYS'] = False
     
@@ -31,6 +38,7 @@ def create_app():
     @app.route('/')
     def health_check():
         """Health check endpoint"""
+        logger.debug("Health check requested", extra={"operation": "health_check"})
         return jsonify({
             'status': 'healthy',
             'service': 'content-finder-backend',
@@ -55,5 +63,12 @@ def create_app():
 
 if __name__ == '__main__':
     app = create_app()
-    print("Starting Flask server on http://localhost:5000")
+    logger.info(
+        "Starting Flask server",
+        extra={
+            "operation": "app_start",
+            "host": "0.0.0.0",
+            "port": 5000,
+        },
+    )
     app.run(debug=True, host='0.0.0.0', port=5000)
