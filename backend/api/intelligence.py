@@ -186,18 +186,12 @@ def voc_discovery():
         return jsonify({'error': 'segment_name is required'}), 400
 
     try:
+        # Only accept actual data overrides, not enable flags
+        # Enable flags without data shouldn't override file config
         config_overrides = {
             key: value
             for key, value in payload.items()
-            if key
-            in {
-                "enable_reddit",
-                "enable_trends",
-                "enable_curated_queries",
-                "google_trends",
-                "trends_keywords",
-                "subreddits",
-            }
+            if key in {"google_trends", "trends_keywords", "subreddits"}
             and value  # Only include if value is truthy (not empty list/dict)
         }
         logger.debug(f"Raw payload received: {payload}", extra={"operation": "voc_discovery_request", "segment_name": segment_name})
