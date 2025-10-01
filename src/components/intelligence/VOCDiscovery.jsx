@@ -1,3 +1,4 @@
+// src/components/intelligence/VOCDiscovery.jsx
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     Alert,
@@ -15,6 +16,8 @@ import {
     TextField,
     Typography,
     MenuItem,
+    Paper,
+    Link,
 } from '@mui/material';
 import InsightsIcon from '@mui/icons-material/Insights';
 import ForumIcon from '@mui/icons-material/Forum';
@@ -27,12 +30,83 @@ const API_BASE_URL = import.meta.env.VITE_BACKEND_URL || DEFAULT_API_BASE;
 
 const defaultSegments = ['SMB Leaders'];
 
+const PostCard = ({ post, isGreyedOut, onToggle, isSelected, showAnalysis }) => (
+    <Card
+        variant="outlined"
+        sx={{
+            mb: 2,
+            opacity: isGreyedOut ? 0.5 : 1,
+            transition: 'opacity 0.3s',
+        }}
+    >
+        <CardContent>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                {onToggle && (
+                    <FormControlLabel
+                        control={
+                            <Checkbox
+                                checked={Boolean(isSelected)}
+                                onChange={() => onToggle(post.id)}
+                            />
+                        }
+                        label=""
+                        sx={{ mr: 1, mt: -1 }}
+                    />
+                )}
+                <Box flexGrow={1}>
+                    <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
+                        {post.title}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                        r/{post.subreddit} • Score {post.score} • {post.num_comments} comments
+                    </Typography>
+                    {post.content_snippet && (
+                        <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                            {post.content_snippet}
+                        </Typography>
+                    )}
+                    {showAnalysis && post.ai_analysis && (
+                        <Box sx={{ mt: 2, p: 2, bgcolor: CustomColors.UIGrey100, borderRadius: 1 }}>
+                            <Typography variant="subtitle2" fontWeight={FontWeight.SemiBold} gutterBottom>
+                                AI Insight
+                            </Typography>
+                            <Typography variant="body2">
+                                <strong>Relevance:</strong> {post.ai_analysis.relevance_score ?? 'n/a'}
+                            </Typography>
+                            {post.ai_analysis.identified_pain_point && (
+                                <Typography variant="body2" sx={{ mt: 0.5 }}>
+                                    <strong>Pain Point:</strong> {post.ai_analysis.identified_pain_point}
+                                </Typography>
+                            )}
+                            {post.ai_analysis.reasoning && (
+                                <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
+                                    {post.ai_analysis.reasoning}
+                                </Typography>
+                            )}
+                        </Box>
+                    )}
+                    {post.url && (
+                        <Typography variant="body2" sx={{ mt: 1 }}>
+                            <Link href={post.url} target="_blank" rel="noreferrer">
+                                View discussion
+                            </Link>
+                        </Typography>
+                    )}
+                </Box>
+            </Stack>
+        </CardContent>
+    </Card>
+);
+
+
 const VOCDiscovery = () => {
     const [segmentName, setSegmentName] = useState(defaultSegments[0]);
     const [availableSegments, setAvailableSegments] = useState(defaultSegments);
     const [error, setError] = useState('');
     const [warnings, setWarnings] = useState([]);
-    const [redditPosts, setRedditPosts] = useState([]);
+    const [rawPosts, setRawPosts] = useState([]);
+    const [filteredPosts, setFilteredPosts] = useState([]);
+    const [analyzedPosts, setAnalyzedPosts] = useState([]);
     const [googleTrends, setGoogleTrends] = useState([]);
     const [curatedQueries, setCuratedQueries] = useState([]);
     const [feedMessage, setFeedMessage] = useState('');
@@ -41,10 +115,7 @@ const VOCDiscovery = () => {
     const [segmentConfig, setSegmentConfig] = useState(null);
     const [discoveryResults, setDiscoveryResults] = useState(null);
 
-    const selectedCount = useMemo(
-        () => redditPosts.filter((post) => post.selected).length,
-        [redditPosts],
-    );
+    const selectedPosts = useMemo(() => new Set(analyzedPosts.filter(p => p.selected).map(p => p.id)), [analyzedPosts]);
 
     const startDiscovery = useCallback(async () => {
         if (!segmentName) {
@@ -55,7 +126,9 @@ const VOCDiscovery = () => {
         setError('');
         setWarnings([]);
         setFeedMessage('');
-        setRedditPosts([]);
+        setRawPosts([]);
+        setFilteredPosts([]);
+        setAnalyzedPosts([]);
         setGoogleTrends([]);
         setCuratedQueries([]);
         setDiscoveryLogs(['Starting VOC Discovery...']);
@@ -80,12 +153,15 @@ const VOCDiscovery = () => {
             }
 
             const data = await response.json();
+
+            setRawPosts(data.raw_reddit_posts || []);
+            setFilteredPosts(data.filtered_reddit_posts || []);
             const posts = (data.reddit_posts || []).map((post) => ({
                 ...post,
                 selected: post.selected !== false,
             }));
+            setAnalyzedPosts(posts);
 
-            setRedditPosts(posts);
             setGoogleTrends(data.google_trends || []);
             setCuratedQueries(data.curated_queries || []);
             setWarnings(data.warnings || []);
@@ -134,7 +210,9 @@ const VOCDiscovery = () => {
     useEffect(() => {
         setSegmentConfig(null);
         setDiscoveryResults(null);
-        setRedditPosts([]);
+        setRawPosts([]);
+        setFilteredPosts([]);
+        setAnalyzedPosts([]);
         setGoogleTrends([]);
         setCuratedQueries([]);
         setWarnings([]);
@@ -188,19 +266,20 @@ const VOCDiscovery = () => {
     };
 
     const handleTogglePost = (postId) => {
-        setRedditPosts((prevPosts) =>
+        setAnalyzedPosts((prevPosts) =>
             prevPosts.map((post) =>
                 post.id === postId
                     ? {
-                          ...post,
-                          selected: !post.selected,
-                      }
+                        ...post,
+                        selected: !post.selected,
+                    }
                     : post,
             ),
         );
     };
 
     const handleFeed = () => {
+        const selectedCount = selectedPosts.size;
         if (!selectedCount) {
             setFeedMessage('Select at least one Reddit insight to feed into the Intelligence Engine.');
             return;
@@ -210,6 +289,9 @@ const VOCDiscovery = () => {
             `Prepared ${selectedCount} Reddit insight${selectedCount > 1 ? 's' : ''} for the Intelligence Engine.`,
         );
     };
+
+    const filteredPostIds = useMemo(() => new Set(filteredPosts.map(p => p.id)), [filteredPosts]);
+
 
     return (
         <Box>
@@ -304,29 +386,7 @@ const VOCDiscovery = () => {
                     <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold} gutterBottom>
                         Discovery Log
                     </Typography>
-                    <Box component="pre" sx={{ fontSize: 12, whiteSpace: 'pre-wrap', m: 0 }}>
-                        {discoveryLogs.join('\n')}
-                    </Box>
-                </Box>
-            )}
-
-            {!isDiscoveryStarted && discoveryLogs.length > 0 && (
-                <Box
-                    sx={(theme) => ({
-                        mt: 2,
-                        p: 2,
-                        borderRadius: 2,
-                        backgroundColor:
-                            theme.palette.mode === 'dark'
-                                ? theme.palette.grey[900]
-                                : theme.palette.grey[100],
-                        boxShadow: 1,
-                    })}
-                >
-                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold} gutterBottom>
-                        Discovery Log
-                    </Typography>
-                    <Box component="pre" sx={{ fontSize: 12, whiteSpace: 'pre-wrap', m: 0 }}>
+                    <Box component="pre" sx={{ fontSize: 12, whiteSpace: 'pre-wrap', m: 0, maxHeight: 300, overflowY: 'auto' }}>
                         {discoveryLogs.join('\n')}
                     </Box>
                 </Box>
@@ -339,12 +399,141 @@ const VOCDiscovery = () => {
             )}
 
             {!isDiscoveryStarted && discoveryResults && (
-                <Alert severity="success" sx={{ mb: 2 }}>
-                    Discovery completed with {discoveryResults.reddit_posts?.length || 0} Reddit
-                    insight{(discoveryResults.reddit_posts?.length || 0) === 1 ? '' : 's'} and{' '}
-                    {discoveryResults.google_trends?.length || 0} Google Trends signal
-                    {(discoveryResults.google_trends?.length || 0) === 1 ? '' : 's'}.
-                </Alert>
+                <>
+                    <Alert severity="success" sx={{ my: 2 }}>
+                        Discovery completed with {discoveryResults.raw_reddit_posts?.length || 0} posts found, {discoveryResults.filtered_reddit_posts?.length || 0} passed filters, and {discoveryResults.reddit_posts?.length || 0} analyzed.
+                    </Alert>
+
+                    <Grid container spacing={3}>
+                        {/* Column 1: Raw Reddit Feed */}
+                        <Grid item xs={12} md={4}>
+                            <Typography variant="h6" fontWeight={FontWeight.SemiBold} gutterBottom>
+                                Raw Feed ({rawPosts.length})
+                            </Typography>
+                            <Paper sx={{ p: 2, height: '70vh', overflowY: 'auto', bgcolor: 'grey.50' }}>
+                                {rawPosts.map(post => (
+                                    <PostCard
+                                        key={`raw-${post.id}`}
+                                        post={post}
+                                        isGreyedOut={!filteredPostIds.has(post.id)}
+                                    />
+                                ))}
+                            </Paper>
+                        </Grid>
+
+                        {/* Column 2: Passed Initial Filters */}
+                        <Grid item xs={12} md={4}>
+                            <Typography variant="h6" fontWeight={FontWeight.SemiBold} gutterBottom>
+                                Passed Filters ({filteredPosts.length})
+                            </Typography>
+                            <Paper sx={{ p: 2, height: '70vh', overflowY: 'auto', bgcolor: 'grey.50' }}>
+                                {filteredPosts.map(post => (
+                                    <PostCard key={`filtered-${post.id}`} post={post} />
+                                ))}
+                            </Paper>
+                        </Grid>
+
+                        {/* Column 3: AI Analysis & Verdict */}
+                        <Grid item xs={12} md={4}>
+                            <Typography variant="h6" fontWeight={FontWeight.SemiBold} gutterBottom>
+                                AI Analysis ({analyzedPosts.length})
+                            </Typography>
+                            <Paper sx={{ p: 2, height: '70vh', overflowY: 'auto', bgcolor: 'grey.50' }}>
+                                {analyzedPosts.map(post => (
+                                    <PostCard
+                                        key={`analyzed-${post.id}`}
+                                        post={post}
+                                        onToggle={handleTogglePost}
+                                        isSelected={selectedPosts.has(post.id)}
+                                        showAnalysis
+                                    />
+                                ))}
+                            </Paper>
+                        </Grid>
+                    </Grid>
+
+                    <Divider sx={{ my: 4 }} />
+
+                    <Grid container spacing={3}>
+                        <Grid item xs={12} md={6}>
+                            <Card sx={{ height: '100%' }}>
+                                <CardContent>
+                                    <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                                        <TrendingUpIcon color="primary" />
+                                        <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
+                                            Google Trends Signals
+                                        </Typography>
+                                    </Stack>
+
+                                    {!googleTrends.length && !isDiscoveryStarted ? (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Google Trends data is unavailable for this segment.
+                                        </Typography>
+                                    ) : (
+                                        <Stack spacing={2}>
+                                            {googleTrends.map((trend) => (
+                                                <Box key={trend.query} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                                                    <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
+                                                        {trend.query}
+                                                    </Typography>
+                                                    {trend.comparison_keyword && (
+                                                        <Typography variant="caption" color="text.secondary">
+                                                            Compared against {trend.comparison_keyword}
+                                                        </Typography>
+                                                    )}
+                                                    <Divider sx={{ my: 1 }} />
+                                                    <Typography variant="body2" color="text.secondary">
+                                                        {trend.interest_over_time?.length || 0} recent data points captured.
+                                                    </Typography>
+                                                    {trend.related_queries?.rising?.length ? (
+                                                        <Box sx={{ mt: 1 }}>
+                                                            <Typography variant="subtitle2" gutterBottom>
+                                                                Rising searches
+                                                            </Typography>
+                                                            <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                                {trend.related_queries.rising.slice(0, 5).map((item, index) => (
+                                                                    <Chip key={`${trend.query}-rising-${index}`} label={item.query || item.topic_title || 'Insight'} size="small" />
+                                                                ))}
+                                                            </Stack>
+                                                        </Box>
+                                                    ) : null}
+                                                </Box>
+                                            ))}
+                                        </Stack>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                        <Grid item xs={12} md={6}>
+                            <Card sx={{ flexGrow: 1 }}>
+                                <CardContent>
+                                    <Stack direction="row" spacing={1} alignItems="center" mb={2}>
+                                        <TaskAltIcon color="success" />
+                                        <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
+                                            Curated Research Prompts
+                                        </Typography>
+                                    </Stack>
+
+                                    {!curatedQueries.length && !isDiscoveryStarted ? (
+                                        <Typography variant="body2" color="text.secondary">
+                                            Curated queries will appear once AI analysis is available.
+                                        </Typography>
+                                    ) : !curatedQueries.length && isDiscoveryStarted ? (
+                                        <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                                            No actionable insights identified this time. Check back after new discussions emerge in your target communities.
+                                        </Typography>
+                                    ) : (
+                                        <Stack spacing={1}>
+                                            {curatedQueries.map((query, index) => (
+                                                <Chip key={index} label={query} variant="outlined" />
+                                            ))}
+                                        </Stack>
+                                    )}
+                                </CardContent>
+                            </Card>
+                        </Grid>
+                    </Grid>
+                </>
             )}
 
             {error && (
@@ -359,169 +548,6 @@ const VOCDiscovery = () => {
                 </Alert>
             ))}
 
-            <Grid container spacing={3}>
-                <Grid item xs={12} md={6}>
-                    <Card sx={{ height: '100%' }}>
-                        <CardContent>
-                            <Stack direction="row" spacing={1} alignItems="center" mb={2}>
-                                <ForumIcon color="secondary" />
-                                <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
-                                    Reddit Conversations
-                                </Typography>
-                                <Chip label={`${selectedCount} selected`} size="small" color="secondary" />
-                            </Stack>
-
-                            {!redditPosts.length && !isDiscoveryStarted ? (
-                                <Typography variant="body2" color="text.secondary">
-                                    No Reddit posts matched the filters for this segment.
-                                </Typography>
-                            ) : (
-                                <Stack spacing={2}>
-                                    {redditPosts.map((post) => (
-                                        <Box key={post.id} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                                                <FormControlLabel
-                                                    control={
-                                                        <Checkbox
-                                                            checked={Boolean(post.selected)}
-                                                            onChange={() => handleTogglePost(post.id)}
-                                                        />
-                                                    }
-                                                    label={
-                                                        <Box>
-                                                            <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
-                                                                {post.title}
-                                                            </Typography>
-                                                            <Typography variant="caption" color="text.secondary">
-                                                                r/{post.subreddit} • Score {post.score} • {post.num_comments} comments
-                                                            </Typography>
-                                                        </Box>
-                                                    }
-                                                />
-                                            </Stack>
-
-                                            {post.content_snippet && (
-                                                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-                                                    {post.content_snippet}
-                                                </Typography>
-                                            )}
-
-                                            {post.ai_analysis && (
-                                                <Box sx={{ mt: 2, p: 2, bgcolor: CustomColors.UIGrey100, borderRadius: 1 }}>
-                                                    <Typography variant="subtitle2" fontWeight={FontWeight.SemiBold} gutterBottom>
-                                                        AI Insight
-                                                    </Typography>
-                                                    <Typography variant="body2">
-                                                        <strong>Relevance:</strong> {post.ai_analysis.relevance_score ?? 'n/a'}
-                                                    </Typography>
-                                                    {post.ai_analysis.identified_pain_point && (
-                                                        <Typography variant="body2" sx={{ mt: 0.5 }}>
-                                                            <strong>Pain Point:</strong> {post.ai_analysis.identified_pain_point}
-                                                        </Typography>
-                                                    )}
-                                                    {post.ai_analysis.reasoning && (
-                                                        <Typography variant="body2" sx={{ mt: 0.5 }} color="text.secondary">
-                                                            {post.ai_analysis.reasoning}
-                                                        </Typography>
-                                                    )}
-                                                </Box>
-                                            )}
-
-                                            {post.url && (
-                                                <Typography variant="body2" sx={{ mt: 1 }}>
-                                                    <a href={post.url} target="_blank" rel="noreferrer">
-                                                        View discussion
-                                                    </a>
-                                                </Typography>
-                                            )}
-                                        </Box>
-                                    ))}
-                                </Stack>
-                            )}
-                        </CardContent>
-                    </Card>
-                </Grid>
-
-                <Grid item xs={12} md={6}>
-                    <Stack spacing={3} height="100%">
-                        <Card>
-                            <CardContent>
-                                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
-                                    <TrendingUpIcon color="primary" />
-                                    <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
-                                        Google Trends Signals
-                                    </Typography>
-                                </Stack>
-
-                                {!googleTrends.length && !isDiscoveryStarted ? (
-                                    <Typography variant="body2" color="text.secondary">
-                                        Google Trends data is unavailable for this segment.
-                                    </Typography>
-                                ) : (
-                                    <Stack spacing={2}>
-                                        {googleTrends.map((trend) => (
-                                            <Box key={trend.query} sx={{ p: 2, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
-                                                <Typography variant="subtitle1" fontWeight={FontWeight.Medium}>
-                                                    {trend.query}
-                                                </Typography>
-                                                {trend.comparison_keyword && (
-                                                    <Typography variant="caption" color="text.secondary">
-                                                        Compared against {trend.comparison_keyword}
-                                                    </Typography>
-                                                )}
-                                                <Divider sx={{ my: 1 }} />
-                                                <Typography variant="body2" color="text.secondary">
-                                                    {trend.interest_over_time?.length || 0} recent data points captured.
-                                                </Typography>
-                                                {trend.related_queries?.rising?.length ? (
-                                                    <Box sx={{ mt: 1 }}>
-                                                        <Typography variant="subtitle2" gutterBottom>
-                                                            Rising searches
-                                                        </Typography>
-                                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
-                                                            {trend.related_queries.rising.slice(0, 5).map((item, index) => (
-                                                                <Chip key={`${trend.query}-rising-${index}`} label={item.query || item.topic_title || 'Insight'} size="small" />
-                                                            ))}
-                                                        </Stack>
-                                                    </Box>
-                                                ) : null}
-                                            </Box>
-                                        ))}
-                                    </Stack>
-                                )}
-                            </CardContent>
-                        </Card>
-
-                        <Card sx={{ flexGrow: 1 }}>
-                            <CardContent>
-                                <Stack direction="row" spacing={1} alignItems="center" mb={2}>
-                                    <TaskAltIcon color="success" />
-                                    <Typography variant="h6" fontWeight={FontWeight.SemiBold}>
-                                        Curated Research Prompts
-                                    </Typography>
-                                </Stack>
-
-                                {!curatedQueries.length && !isDiscoveryStarted ? (
-                                    <Typography variant="body2" color="text.secondary">
-                                        Curated queries will appear once AI analysis is available.
-                                    </Typography>
-                                ) : !curatedQueries.length && isDiscoveryStarted ? (
-                                    <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                                        No actionable insights identified this time. Check back after new discussions emerge in your target communities.
-                                    </Typography>
-                                ) : (
-                                    <Stack spacing={1}>
-                                        {curatedQueries.map((query, index) => (
-                                            <Chip key={index} label={query} variant="outlined" />
-                                        ))}
-                                    </Stack>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </Stack>
-                </Grid>
-            </Grid>
-
             <Divider sx={{ my: 4 }} />
 
             <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ sm: 'center' }}>
@@ -529,7 +555,7 @@ const VOCDiscovery = () => {
                     variant="contained"
                     color="secondary"
                     onClick={handleFeed}
-                    disabled={!selectedCount}
+                    disabled={!selectedPosts.size}
                 >
                     Feed to Intelligence Engine
                 </Button>

@@ -38,3 +38,4 @@ STRICT REQUIREMENTS:
 - If you cannot score a post, still include it with score 5.0 and reason "Insufficient information to assess relevance"
 - Array length MUST match the number of posts provided
 - Ensure the JSON is properly formatted and parseable
+- Before returning, double-check that the entire response is a single, valid JSON array and nothing else

@@ -9,14 +9,14 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from backend.core.gemini_client import GeminiClient, GeminiClientError
-from backend.intelligence.voc_reddit import (
+from core.gemini_client import GeminiClient, GeminiClientError
+from intelligence.voc_reddit import (
     RedditDataCollector,
     RedditHistoryStore,
     load_segment_config,
 )
-from backend.intelligence.voc_synthesis import filter_high_value_posts, generate_curated_queries
-from backend.intelligence.voc_trends import fetch_google_trends
+from intelligence.voc_synthesis import filter_high_value_posts, generate_curated_queries
+from intelligence.voc_trends import fetch_google_trends
 
 logger = logging.getLogger(__name__)
 

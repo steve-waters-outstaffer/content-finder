@@ -1,8 +1,8 @@
 """
 This module defines the AI agents used in the intelligence engine.
 """
-from backend.core.gemini_client import GeminiClient
-from backend.core.tavily_client import TavilyApiClient
+from core.gemini_client import GeminiClient
+from core.tavily_client import TavilyApiClient
 
 class ResearchAgent:
     """An AI agent that uses search tools to find relevant URLs for a given topic."""

@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Dict, List, Sequence, Tuple
 
-from backend.core.gemini_client import GeminiClient, GeminiClientError
+from core.gemini_client import GeminiClient, GeminiClientError
 
 logger = logging.getLogger(__name__)
 

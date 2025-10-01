@@ -12,9 +12,9 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from dotenv import load_dotenv
 
-from backend.core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
-from backend.core.gemini_client import GeminiClient, GeminiClientError
-from backend.core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
+from core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
+from core.gemini_client import GeminiClient, GeminiClientError
+from core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
 
 # Load environment variables when running locally/scripts
 load_dotenv()

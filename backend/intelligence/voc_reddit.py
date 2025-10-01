@@ -13,7 +13,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 import requests
 from google.cloud import firestore
 
-from backend.core.gemini_client import GeminiClient, GeminiClientError
+from core.gemini_client import GeminiClient, GeminiClientError
 
 logger = logging.getLogger(__name__)
 

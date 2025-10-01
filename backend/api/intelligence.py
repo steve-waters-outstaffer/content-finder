@@ -20,9 +20,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from intelligence.agent_research import AgentResearcher
 from intelligence.voc_discovery import (
     VOCDiscoveryError,
-    _load_segment_config,
     run_voc_discovery,
 )
+from intelligence.voc_reddit import load_segment_config
 
 # Load environment variables
 load_dotenv()
@@ -75,8 +75,8 @@ def get_segment_config(segment_name: str):
     """Return the discovery configuration details for a specific segment."""
 
     try:
-        config = _load_segment_config(segment_name)
-    except VOCDiscoveryError as exc:
+        config = load_segment_config(segment_name)
+    except FileNotFoundError as exc:
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:  # noqa: BLE001 - surface unexpected failures to client
         return (
@@ -127,10 +127,11 @@ def voc_discovery():
                 "trends_keywords",
                 "subreddits",
             }
+            and value  # Only include if value is truthy (not empty list/dict)
         }
         discovery_payload = run_voc_discovery(
             segment_name=segment_name,
-            segment_config=config_overrides or None,
+            segment_config=config_overrides if config_overrides else None,
         )
         return jsonify(discovery_payload)
     except VOCDiscoveryError as exc:
