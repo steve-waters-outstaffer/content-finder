@@ -56,7 +56,7 @@ def fetch_reddit():
         )
 
         # Fetch posts (no enrichment yet)
-        reddit_posts, warnings = collector.fetch_posts(
+        reddit_posts, raw_posts, warnings = collector.fetch_posts(
             segment_name=segment_name,
             segment_config=config,
         )
@@ -68,13 +68,16 @@ def fetch_reddit():
                 "operation": "reddit_fetch_stage",
                 "segment_name": segment_name,
                 "count": len(reddit_posts),
+                "raw_count": len(raw_posts),
                 "duration_ms": duration_ms,
             },
         )
 
         return jsonify({
-            "raw_posts": reddit_posts,
+            "raw_posts": reddit_posts,  # Filtered posts (for backward compatibility)
+            "unfiltered_posts": raw_posts,  # NEW: All posts before filtering
             "count": len(reddit_posts),
+            "raw_count": len(raw_posts),
             "warnings": warnings,
             "duration_ms": duration_ms,
         })
@@ -90,14 +93,11 @@ def fetch_reddit():
         return jsonify({'error': str(exc)}), 500
 
 
-@stages_bp.route('/intelligence/voc-discovery/analyze-posts', methods=['POST'])
-def analyze_posts():
+@stages_bp.route('/intelligence/voc-discovery/pre-score-posts', methods=['POST'])
+def pre_score_posts():
     """
-    Stage 2: Filter posts with AI relevance scoring.
-    Requires raw_posts from Stage 1.
-    
-    Note: The posts from fetch-reddit are already enriched with AI analysis.
-    This stage just filters them based on relevance score.
+    Stage 2: Batch pre-score posts using AI (title + snippet only, no comments).
+    Fast relevance scoring to filter down to promising posts.
     """
     payload = request.get_json(silent=True) or {}
     segment_name = payload.get('segment_name')
@@ -107,24 +107,13 @@ def analyze_posts():
         return jsonify({'error': 'segment_name is required'}), 400
 
     if not raw_posts:
-        logger.warning(
-            "No raw_posts provided to analyze_posts",
-            extra={
-                "operation": "analyze_posts_stage",
-                "segment_name": segment_name,
-                "payload_keys": list(payload.keys()),
-            },
-        )
-        return jsonify({
-            'error': 'raw_posts is required (from fetch-reddit stage)',
-            'received_keys': list(payload.keys()),
-        }), 400
+        return jsonify({'error': 'raw_posts is required (from fetch-reddit stage)'}), 400
 
     try:
         logger.info(
-            "Starting post filtering",
+            "Starting batch pre-score",
             extra={
-                "operation": "analyze_posts_stage",
+                "operation": "prescore_stage",
                 "segment_name": segment_name,
                 "post_count": len(raw_posts),
             },
@@ -133,40 +122,175 @@ def analyze_posts():
 
         # Load config
         config = load_segment_config(segment_name)
-
-        # Filter high-value posts (posts are already enriched from stage 1)
-        filtered_posts = filter_high_value_posts(
+        gemini_client = GeminiClient()
+        
+        # Batch pre-score using title + snippet only (fast)
+        from intelligence.voc_synthesis import batch_prescore_posts
+        prescored_posts, warnings = batch_prescore_posts(
             raw_posts,
             config,
+            segment_name,
+            gemini_client,
+        )
+        
+        # Filter by prescore threshold
+        min_prescore = config.get('prescore_threshold', 6.0)
+        promising_posts = [
+            p for p in prescored_posts 
+            if p.get('prescore', {}).get('relevance_score', 0) >= min_prescore
+        ]
+        rejected_posts = [
+            p for p in prescored_posts 
+            if p.get('prescore', {}).get('relevance_score', 0) < min_prescore
+        ]
+
+        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        logger.info(
+            "Batch pre-score completed",
+            extra={
+                "operation": "prescore_stage",
+                "segment_name": segment_name,
+                "prescored_count": len(prescored_posts),
+                "promising_count": len(promising_posts),
+                "threshold": min_prescore,
+                "duration_ms": duration_ms,
+            },
+        )
+
+        return jsonify({
+            "prescored_posts": prescored_posts,
+            "promising_posts": promising_posts,
+            "rejected_posts": rejected_posts,
+            "count": len(promising_posts),
+            "stats": {
+                "input": len(raw_posts),
+                "prescored": len(prescored_posts),
+                "promising": len(promising_posts),
+                "rejected": len(rejected_posts),
+            },
+            "threshold": min_prescore,
+            "warnings": warnings,
+            "duration_ms": duration_ms,
+        })
+
+    except Exception as exc:
+        logger.exception(
+            "Pre-score failed",
+            extra={
+                "operation": "prescore_stage",
+                "segment_name": segment_name,
+            },
+        )
+        return jsonify({'error': str(exc)}), 500
+
+
+@stages_bp.route('/intelligence/voc-discovery/enrich-posts', methods=['POST'])
+def enrich_posts():
+    """
+    Stage 3: Deep enrichment with comments for high-scoring posts.
+    Fetches comments and runs full AI analysis.
+    """
+    payload = request.get_json(silent=True) or {}
+    segment_name = payload.get('segment_name')
+    promising_posts = payload.get('promising_posts', [])
+
+    if not segment_name:
+        return jsonify({'error': 'segment_name is required'}), 400
+
+    if not promising_posts:
+        return jsonify({'error': 'promising_posts is required (from pre-score stage)'}), 400
+
+    try:
+        logger.info(
+            "Starting deep enrichment",
+            extra={
+                "operation": "enrich_stage",
+                "segment_name": segment_name,
+                "post_count": len(promising_posts),
+            },
+        )
+        start_time = time.perf_counter()
+
+        # Load config
+        config = load_segment_config(segment_name)
+        gemini_client = GeminiClient()
+        history_store = RedditHistoryStore.create()
+        collector = RedditDataCollector(
+            api_key=os.environ.get("SCRAPECREATORS_API_KEY"),
+            gemini_client=gemini_client,
+            history_store=history_store,
+        )
+        
+        # Deep enrichment with comments
+        enriched_posts = []
+        warnings = []
+        for post in promising_posts:
+            enriched_post, post_warnings = collector.enrich_post(
+                post,
+                segment_name=segment_name,
+                segment_config=config,
+            )
+            enriched_posts.append(enriched_post)
+            warnings.extend(post_warnings)
+
+        # Final filter based on deep AI analysis
+        final_threshold = config.get('ai_relevance_threshold', 6.0)
+        filtered_posts, rejected_posts = filter_high_value_posts(
+            enriched_posts,
+            min_score=final_threshold,
         )
 
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
         logger.info(
-            "Post filtering completed",
+            "Deep enrichment completed",
             extra={
-                "operation": "analyze_posts_stage",
+                "operation": "enrich_stage",
                 "segment_name": segment_name,
+                "enriched_count": len(enriched_posts),
                 "filtered_count": len(filtered_posts),
+                "threshold": final_threshold,
                 "duration_ms": duration_ms,
             },
         )
 
         return jsonify({
             "filtered_posts": filtered_posts,
+            "rejected_posts": rejected_posts,
             "count": len(filtered_posts),
-            "warnings": [],
+            "stats": {
+                "input": len(promising_posts),
+                "enriched": len(enriched_posts),
+                "final_accepted": len(filtered_posts),
+                "final_rejected": len(rejected_posts),
+            },
+            "threshold": final_threshold,
+            "warnings": warnings,
             "duration_ms": duration_ms,
         })
 
     except Exception as exc:
         logger.exception(
-            "Post filtering failed",
+            "Enrichment failed",
             extra={
-                "operation": "analyze_posts_stage",
+                "operation": "enrich_stage",
                 "segment_name": segment_name,
             },
         )
         return jsonify({'error': str(exc)}), 500
+
+
+@stages_bp.route('/intelligence/voc-discovery/analyze-posts', methods=['POST'])
+def analyze_posts():
+    """
+    DEPRECATED: This endpoint combined pre-scoring and enrichment.
+    Use /pre-score-posts and /enrich-posts instead.
+    
+    Kept for backwards compatibility - redirects to pre-score endpoint.
+    """
+    return jsonify({
+        'error': 'This endpoint is deprecated. Use /pre-score-posts then /enrich-posts instead.',
+        'suggestion': 'Call /pre-score-posts first, then /enrich-posts with the promising_posts'
+    }), 410  # 410 Gone
 
 
 @stages_bp.route('/intelligence/voc-discovery/fetch-trends', methods=['POST'])

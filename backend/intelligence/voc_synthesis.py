@@ -11,6 +11,123 @@ from core.gemini_client import GeminiClient, GeminiClientError
 logger = logging.getLogger(__name__)
 
 
+def batch_prescore_posts(
+    posts: Sequence[Dict[str, Any]],
+    segment_config: Dict[str, Any],
+    segment_name: str,
+    gemini_client: GeminiClient,
+    batch_size: int = 50,  # Process in batches to avoid token limits
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """
+    Stage 1: Batch pre-score posts using only title + snippet (no comments).
+    Fast, lightweight analysis to filter down to promising posts.
+    """
+    warnings: List[str] = []
+    
+    if not posts:
+        return [], warnings
+    
+    all_scored_posts = []
+    
+    # Process in batches to avoid token limits
+    for batch_start in range(0, len(posts), batch_size):
+        batch_end = min(batch_start + batch_size, len(posts))
+        batch = posts[batch_start:batch_end]
+        
+        # Build compact summary of posts for batch analysis
+        posts_summary_lines = []
+        for idx, post in enumerate(batch):
+            title = post.get("title", "")
+            snippet = post.get("content_snippet", "")[:200]  # Limit snippet length
+            posts_summary_lines.append(
+                f"POST {idx}:\nTitle: {title}\nContent: {snippet}\n"
+            )
+        
+        posts_summary = "\n".join(posts_summary_lines)
+        
+        try:
+            prompt_context = {
+                "segment_name": segment_name,
+                "audience": segment_config.get("audience", ""),
+                "priorities_list": "\n".join([f"• {p}" for p in segment_config.get("priorities", [])]),
+                "posts_summary": posts_summary,
+            }
+            
+            logger.info(
+                "Starting batch pre-score (batch %d-%d)",
+                batch_start,
+                batch_end,
+                extra={
+                    "operation": "batch_prescore",
+                    "segment_name": segment_name,
+                    "batch_start": batch_start,
+                    "batch_end": batch_end,
+                    "batch_size": len(batch),
+                },
+            )
+            
+            response = gemini_client.generate_json_response(
+                "voc_reddit_batch_prescore.txt",
+                prompt_context,
+                temperature=0.3,
+                max_output_tokens=4096,
+            )
+            
+            if not response or not response.data:
+                warning = f"Batch pre-score returned empty response for posts {batch_start}-{batch_end}"
+                logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
+                warnings.append(warning)
+                continue
+            
+            if not isinstance(response.data, list):
+                warning = f"Batch pre-score returned unexpected format for posts {batch_start}-{batch_end}"
+                logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
+                warnings.append(warning)
+                continue
+            
+            # Merge scores back into posts
+            for score_obj in response.data:
+                idx = score_obj.get("post_index")
+                if idx is None or idx >= len(batch):
+                    continue
+                
+                post = batch[idx].copy()
+                post["prescore"] = {
+                    "relevance_score": score_obj.get("relevance_score", 0),
+                    "quick_reason": score_obj.get("quick_reason", ""),
+                }
+                all_scored_posts.append(post)
+            
+            logger.info(
+                "Batch pre-score complete for posts %d-%d",
+                batch_start,
+                batch_end,
+                extra={
+                    "operation": "batch_prescore",
+                    "segment_name": segment_name,
+                    "scored_count": len(response.data),
+                },
+            )
+            
+        except (GeminiClientError, FileNotFoundError) as exc:
+            warning = f"Batch pre-score failed for posts {batch_start}-{batch_end}: {exc}"
+            logger.error(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
+            warnings.append(warning)
+            continue
+    
+    logger.info(
+        "All batches complete",
+        extra={
+            "operation": "batch_prescore",
+            "segment_name": segment_name,
+            "total_scored": len(all_scored_posts),
+            "total_input": len(posts),
+        },
+    )
+    
+    return all_scored_posts, warnings
+
+
 def filter_high_value_posts(posts: Sequence[Dict[str, Any]], min_score: float = 6.0) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     accepted: List[Dict[str, Any]] = []
     rejected: List[Dict[str, Any]] = []

@@ -1,41 +1,97 @@
-You are assisting with Voice of Customer research for the segment "{segment_name}".
+You are conducting Voice of Customer research for Outstaffer, focusing on the "{segment_name}" segment.
 
-COMPANY CONTEXT: Outstaffer provides recruitment-led global hiring solutions powered by an integrated EOR platform. We deliver talent first, then scale with technology. Our primary focus is filling roles fast with quality APAC talent (40-80% cost savings), then using our platform to manage the full employment lifecycle.
+=== OUTSTAFFER CONTEXT ===
+Outstaffer is a recruitment-led global hiring platform specializing in APAC talent. We solve three interconnected problems:
 
-AUDIENCE CONTEXT: {audience}
+1. TALENT DELIVERY: Fill open requisitions with quality APAC talent (40-80% cost savings vs local hires)
+2. EMPLOYMENT INFRASTRUCTURE: Employer of Record (EOR) platform handling payroll, compliance, benefits, contracts across 15+ countries
+3. HIRING ACCELERATION: AI-powered screening, video interviews, and skills assessments to compress time-to-hire from months to weeks
 
-YOUR TASK: Quickly score the following Reddit posts for relevance to our segment and business. We need to identify which posts reveal pain points that Outstaffer's recruitment, EOR, AI screening, or HRIS platform could solve.
+Our model: Talent first (we source and screen), then technology (our platform manages the full employment lifecycle).
 
-POSTS TO SCORE:
+=== TARGET SEGMENT ===
+Audience: {audience}
+
+Strategic Priorities for This Segment:
+{priorities_list}
+
+=== YOUR TASK ===
+Score these Reddit posts for relevance to Outstaffer's solutions. You're looking for posts that reveal hiring pain points, workforce challenges, or compliance headaches that our recruitment + EOR + platform can solve.
+
+POSTS TO EVALUATE:
 {posts_summary}
 
-SCORING CRITERIA (0-10):
-- Direct Alignment (0-4 points): Does this discuss hiring, talent acquisition, global employment, compliance, or workforce management challenges?
-- Segment Fit (0-3 points): Is this problem specifically relevant to {segment_name}?
-- Outstaffer Solution Match (0-3 points): Can our recruitment, EOR, AI screening, or HRIS platform directly solve this problem?
+=== SCORING FRAMEWORK (0-10) ===
 
-Return a JSON array with one object per post:
+HIGH-VALUE INDICATORS (7-10 points):
+• Explicit hiring challenges: "can't find qualified developers", "recruitment agencies aren't delivering", "need offshore talent but compliance is complex"
+• Cost/budget pressure: "salaries too high", "need to reduce hiring costs", "exploring nearshore/offshore options"
+• Speed/capacity issues: "requisitions sitting open for months", "recruitment team overwhelmed", "need to scale hiring fast"
+• Global workforce friction: "managing contractors across countries is a nightmare", "EOR options too expensive", "payroll compliance confusion"
+• Process bottlenecks: "screening hundreds of resumes manually", "interview scheduling chaos", "candidate dropout during lengthy processes"
+• Platform/tool gaps: "ATS doesn't integrate with payroll", "need unified HRIS for global team", "tracking compliance across regions is manual"
+
+MODERATE-VALUE INDICATORS (4-6 points):
+• General workforce complaints without clear solution path: "hiring is broken", "HR is understaffed"
+• Adjacent problems: onboarding issues, performance management, retention challenges (we don't directly solve these but they indicate hiring volume)
+• Industry trends: discussions about remote work, AI in HR, future of recruitment (useful context but not direct pain points)
+
+LOW-VALUE INDICATORS (0-3 points):
+• Job seekers complaining about applications/interviews (we serve employers, not candidates)
+• Generic career advice or resume tips
+• Company culture discussions without hiring/workforce angle
+• Individual job search struggles
+• Salary negotiation tactics (unless from employer perspective about budget constraints)
+• Office politics, interpersonal conflicts, management drama
+
+=== SCORING INSTRUCTIONS ===
+For each post, assign a relevance_score (0-10) based on:
+1. Does it describe a problem Outstaffer directly solves? (0-5 points)
+2. Is the poster in our target segment or discussing enterprise-scale challenges? (0-3 points)
+3. Is there urgency, budget impact, or strategic importance mentioned? (0-2 points)
+
+=== RESPONSE FORMAT ===
+Return ONLY a valid JSON array with this exact structure:
+
 [
   {{
     "post_index": 0,
-    "relevance_score": 5.5,
-    "quick_reason": "One sentence explaining the score"
+    "relevance_score": 8.5,
+    "quick_reason": "Enterprise hiring manager struggling with offshore developer sourcing and EOR compliance - direct fit for our talent + platform solution"
   }},
   {{
     "post_index": 1,
-    "relevance_score": 7.0,
-    "quick_reason": "One sentence explaining the score"
+    "relevance_score": 2.0,
+    "quick_reason": "Job seeker venting about application process - not our buyer persona"
   }}
 ]
 
-STRICT REQUIREMENTS:
-- Return ONLY valid JSON array, no text before or after
-- Do NOT wrap in markdown code fences or backticks
-- Every object MUST include all three keys: post_index, relevance_score, quick_reason
-- post_index must be an integer (0, 1, 2, etc.)
-- relevance_score must be a number (can be float like 5.5 or integer like 6)
-- quick_reason must be a non-empty string
-- If you cannot score a post, still include it with score 5.0 and reason "Insufficient information to assess relevance"
-- Array length MUST match the number of posts provided
-- Ensure the JSON is properly formatted and parseable
-- Before returning, double-check that the entire response is a single, valid JSON array and nothing else
+CRITICAL REQUIREMENTS:
+• Return ONLY the JSON array, no markdown fences, no backticks, no explanatory text before or after
+• Array length MUST exactly match the number of posts provided
+• Every object MUST include: post_index (integer), relevance_score (number), quick_reason (string)
+• post_index starts at 0 and increments sequentially
+• relevance_score can be integer or float (e.g., 7.5, 8, 6.0)
+• quick_reason should be one concise sentence explaining the score
+• If a post is unclear or has insufficient info, score it 5.0 with reason: "Ambiguous relevance - insufficient context to assess fit"
+• Validate your JSON structure before returning - it must be parseable
+
+=== SCORING EXAMPLES ===
+
+POST: "Our startup is hiring 20 engineers but can't compete with FAANG salaries. Considering offshore but worried about quality and timezone issues."
+SCORE: 9.0 - "Explicit need for cost-effective offshore engineering talent with quality concerns we address through APAC screening and delivery"
+
+POST: "Been applying to 200 jobs, only got 3 interviews. This market is brutal for candidates."
+SCORE: 1.5 - "Job seeker perspective, not employer pain point - outside our target buyer persona"
+
+POST: "Our HR team uses 5 different systems for global payroll, compliance, and contractor management. Integration nightmare and data is everywhere."
+SCORE: 8.5 - "Clear EOR and HRIS consolidation opportunity - our unified platform solves this exact fragmentation problem"
+
+POST: "What's the best way to format a resume for ATS systems?"
+SCORE: 0.5 - "Candidate-focused resume advice, zero relevance to employer hiring challenges"
+
+POST: "Laid off 50 people today. Feels terrible but company needs to cut costs."
+SCORE: 3.0 - "Cost pressure context but no clear hiring/staffing angle where we add value"
+
+POST: "Considering replacing our recruitment agency. They charge 25% and delivery is slow. Any alternatives?"
+SCORE: 9.5 - "Direct competitor displacement opportunity - agency dissatisfaction with cost and speed, our core value props"

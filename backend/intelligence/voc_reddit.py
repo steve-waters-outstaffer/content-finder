@@ -273,6 +273,7 @@ class RedditDataCollector:
         processed_ids = self.history_store.load(segment_name)
 
         curated: List[Dict[str, Any]] = []
+        raw_unfiltered: List[Dict[str, Any]] = []  # NEW: Store ALL posts before filtering
         warnings: List[str] = []
 
         def log(message: str, level: str = "info") -> None:
@@ -297,6 +298,22 @@ class RedditDataCollector:
                 continue
 
             log(f"Fetched {len(posts)} posts from r/{subreddit}")
+            
+            # NEW: Store ALL raw posts before any filtering
+            for post in posts:
+                raw_unfiltered.append({
+                    "id": str(post.get("id") or post.get("post_id") or ""),
+                    "title": post.get("title", ""),
+                    "url": post.get("url"),
+                    "permalink": post.get("permalink"),
+                    "created_utc": post.get("created_utc"),
+                    "score": post.get("score", 0),
+                    "num_comments": post.get("num_comments", 0),
+                    "subreddit": subreddit,
+                    "content_snippet": post.get("selftext", ""),
+                })
+            
+            # Continue with existing filtering logic
             for post in posts:
                 post_id = str(post.get("id") or post.get("post_id") or "")
                 if not post_id or post_id in processed_ids:
@@ -357,7 +374,8 @@ class RedditDataCollector:
                 )
 
         curated.sort(key=lambda item: item.get("score", 0), reverse=True)
-        return curated, warnings
+        raw_unfiltered.sort(key=lambda item: item.get("score", 0), reverse=True)
+        return curated, raw_unfiltered, warnings
 
     def enrich_post(
         self,
