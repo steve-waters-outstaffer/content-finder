@@ -15,7 +15,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { logoutUser } from '../services/AuthService.js';
 import ContentFinder from './ContentFinder';
 import IntelligenceDashboard from './intelligence/IntelligenceDashboard';
-import VOCDiscovery from './intelligence/VOCDiscovery';
+import VOCDiscovery from './voc/VOCDiscovery';
 import { CustomColors } from '../theme';
 
 const Dashboard = () => {
