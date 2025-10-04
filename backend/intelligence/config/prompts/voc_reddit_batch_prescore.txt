@@ -21,7 +21,7 @@ Posts about:
 - 0-4: Job seeker perspective or unrelated
 
 === RESPONSE FORMAT ===
-Return ONLY a JSON array (no markdown, no backticks, no explanatory text):
+Return ONLY a JSON array with exactly {batch_size} entries (no markdown, no backticks, no explanatory text):
 
 [
   {{"post_index": 0, "relevance_score": 7.5, "quick_reason": "Brief reason"}},
@@ -29,8 +29,8 @@ Return ONLY a JSON array (no markdown, no backticks, no explanatory text):
 ]
 
 CRITICAL REQUIREMENTS:
-- Array must have exactly as many entries as posts provided
+- Array must have exactly {batch_size} entries
 - Use post_index 0, 1, 2, etc. in sequential order
-- Keep quick_reason brief and simple (avoid quotes, newlines, or special characters)
+- Keep quick_reason brief (under 15 words) and simple (no quotes, newlines, or special characters)
 - If a post title contains quotes, paraphrase them in your reason
 - Return pure JSON only - no markdown fences, no preamble, no explanation

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import time
@@ -12,42 +13,53 @@ from core.gemini_client import GeminiClient, GeminiClientError
 logger = logging.getLogger(__name__)
 
 
-def _escape_for_json(text: str) -> str:
+def clean_text_for_json(text: str, max_length: int = 1500) -> str:
     """
-    Escape text to prevent JSON parsing issues.
-    Handles quotes, newlines, and other special characters.
+    Clean text to prevent JSON issues while preserving readability.
+    Handles quotes, newlines, special characters, and HTML entities.
+    
+    Args:
+        text: Raw text to clean
+        max_length: Maximum character length (default 1500)
+    
+    Returns:
+        Cleaned text safe for JSON encoding
     """
     if not text:
         return ""
-    # Replace problematic characters that break JSON strings
-    # Order matters: backslashes first, then other escapes
-    return (
-        text.replace("\\", "\\\\")  # Backslashes first
-        .replace('"', '\\"')        # Double quotes
-        .replace("'", "\\'")        # Single quotes (can break in some contexts)
-        .replace("\n", " ")         # Newlines to spaces
-        .replace("\r", " ")         # Carriage returns
-        .replace("\t", " ")         # Tabs
-        .replace("\b", " ")         # Backspace
-        .replace("\f", " ")         # Form feed
-    )
+    
+    # HTML decode first (handles &amp;, &quot;, etc.)
+    text = html.unescape(text)
+    
+    # Replace problematic characters
+    text = text.replace('\r\n', ' ')  # Windows newlines
+    text = text.replace('\n', ' ')     # Unix newlines
+    text = text.replace('\t', ' ')     # Tabs
+    text = text.replace('"', "'")      # Double quotes → single (safer in JSON strings)
+    text = text.replace('\\', '')      # Remove backslashes
+    
+    # Collapse multiple spaces
+    text = ' '.join(text.split())
+    
+    # Truncate to max length
+    return text[:max_length].strip()
 
 
 def _strip_post_for_prescore(post: Dict[str, Any]) -> Dict[str, Any]:
     """
     Strip Reddit post to minimal fields needed for pre-scoring.
-    Reduces token usage by ~95% while preserving essential context.
-    Escapes content to prevent JSON parsing errors.
+    Reduces token usage while preserving essential context.
+    Cleans content to prevent JSON parsing errors.
     """
     selftext = post.get("content_snippet", "") or post.get("selftext", "")
     
     return {
         "id": post.get("id", ""),
-        "title": _escape_for_json(post.get("title", "")),
+        "title": clean_text_for_json(post.get("title", ""), max_length=200),
         "subreddit": post.get("subreddit", ""),
         "score": post.get("score", 0),
         "num_comments": post.get("num_comments", 0),
-        "selftext": _escape_for_json(selftext[:750]) if selftext else "",  # Truncate then escape
+        "content": clean_text_for_json(selftext, max_length=1000),
     }
 
 
@@ -56,14 +68,14 @@ def batch_prescore_posts(
     segment_config: Dict[str, Any],
     segment_name: str,
     gemini_client: GeminiClient,
-    batch_size: int = 25,  # Reduced from 50 to avoid token limits with stripped data
+    batch_size: int = 25,
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Stage 1: Batch pre-score posts using only title + snippet (no comments).
     Fast, lightweight analysis to filter down to promising posts.
     
-    Posts are stripped to minimal fields (id, title, subreddit, score, num_comments, 
-    selftext[:750]) before sending to Gemini to reduce token usage by ~95%.
+    Uses JSON array format for cleaner, more reliable Gemini parsing.
+    Falls back to text format if payload exceeds token limits.
     """
     warnings: List[str] = []
     
@@ -83,25 +95,6 @@ def batch_prescore_posts(
         # Strip posts to minimal data for pre-scoring
         stripped_batch = [_strip_post_for_prescore(post) for post in batch]
         
-        # Build compact summary of posts for batch analysis
-        # Use json.dumps to ensure proper escaping for JSON context
-        posts_summary_lines = []
-        for idx, post in enumerate(stripped_batch):
-            title = post.get("title", "")
-            snippet = post.get("selftext", "")  # Already truncated to 750 chars
-            posts_summary_lines.append(
-                f"POST {idx}:\nTitle: {json.dumps(title)}\nContent: {json.dumps(snippet)}\n"
-            )
-        
-        posts_summary = "\n".join(posts_summary_lines)
-        
-        prompt_context = {
-            "segment_name": segment_name,
-            "audience": segment_config.get("audience", ""),
-            "priorities_list": "\n".join([f"• {p}" for p in segment_config.get("priorities", [])]),
-            "posts_summary": posts_summary,
-        }
-        
         logger.info(
             "Starting batch pre-score (batch %d-%d)",
             batch_start,
@@ -115,10 +108,73 @@ def batch_prescore_posts(
             },
         )
         
-        # Debug: Log what we're sending to Gemini
+        # OPTION 1: Build JSON array (preferred - cleaner, more reliable)
+        posts_array = [
+            {
+                "post_index": i,
+                "title": post.get("title", "[N/A]"),
+                "content": post.get("content", "")
+            }
+            for i, post in enumerate(stripped_batch)
+        ]
+        
+        posts_json = json.dumps(posts_array, ensure_ascii=False)
+        
+        # Check if JSON payload is too large (~80% of context window)
+        # Rough estimate: 1 token ≈ 4 characters
+        estimated_tokens = len(posts_json) / 4
+        max_tokens = 30000  # Conservative limit for Gemini
+        
+        use_json_format = estimated_tokens <= max_tokens
+        
+        if use_json_format:
+            # Use JSON array format
+            posts_summary = posts_json
+            logger.info(
+                "Using JSON array format for Gemini",
+                extra={
+                    "operation": "batch_prescore",
+                    "segment_name": segment_name,
+                    "batch_start": batch_start,
+                    "posts_json_length": len(posts_json),
+                    "estimated_tokens": int(estimated_tokens),
+                },
+            )
+        else:
+            # OPTION 2: Fallback to text format (if JSON too large)
+            logger.warning(
+                "JSON array too large, using text format",
+                extra={
+                    "operation": "batch_prescore",
+                    "segment_name": segment_name,
+                    "batch_start": batch_start,
+                    "estimated_tokens": int(estimated_tokens),
+                },
+            )
+            
+            posts_summary_lines = []
+            for idx, post in enumerate(stripped_batch):
+                title = post.get("title", "[N/A]")
+                content = post.get("content", "")
+                posts_summary_lines.append(
+                    f"POST {idx}:\n"
+                    f"Title: {title}\n"
+                    f"Content: {content}\n"
+                )
+            posts_summary = "\n".join(posts_summary_lines)
+        
+        prompt_context = {
+            "segment_name": segment_name,
+            "audience": segment_config.get("audience", ""),
+            "priorities_list": "\n".join([f"• {p}" for p in segment_config.get("priorities", [])]),
+            "posts_summary": posts_summary,
+            "batch_size": len(batch),
+            "format_type": "json_array" if use_json_format else "text"
+        }
+        
         logger.info(
             "Sending to Gemini - full posts_summary: %s",
-            posts_summary,
+            posts_summary[:500] + "..." if len(posts_summary) > 500 else posts_summary,
             extra={
                 "operation": "batch_prescore",
                 "segment_name": segment_name,
@@ -135,19 +191,19 @@ def batch_prescore_posts(
                 max_output_tokens=4096,
             )
             
-            # Debug: Log what we got back from Gemini (before parsing)
+            # Debug: Log what we got back from Gemini (truncated)
+            raw_text = response.raw_text if response and response.raw_text else "EMPTY"
             logger.info(
                 "Received from Gemini - full raw response: %s",
-                response.raw_text if response and response.raw_text else "EMPTY",
+                raw_text[:500] + "..." if len(raw_text) > 500 else raw_text,
                 extra={
                     "operation": "batch_prescore",
                     "segment_name": segment_name,
                     "batch_start": batch_start,
-                    "full_response_length": len(response.raw_text) if response and response.raw_text else 0,
+                    "full_response_length": len(raw_text),
                 },
             )
         except GeminiClientError as exc:
-            # Log the error WITH the raw response if available
             logger.error(
                 "Gemini API or parsing error: %s",
                 str(exc),
@@ -373,4 +429,3 @@ def generate_curated_queries(
 
 
 __all__ = ["filter_high_value_posts", "generate_curated_queries"]
-
