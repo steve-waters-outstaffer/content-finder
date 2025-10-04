@@ -1,97 +1,36 @@
-You are conducting Voice of Customer research for Outstaffer, focusing on the "{segment_name}" segment.
+You are scoring Reddit posts for relevance to Outstaffer, a recruitment platform focused on helping companies hire APAC talent and manage global workforces.
 
-=== OUTSTAFFER CONTEXT ===
-Outstaffer is a recruitment-led global hiring platform specializing in APAC talent. We solve three interconnected problems:
+=== WHAT WE'RE LOOKING FOR ===
+Posts about:
+- Hiring challenges (can't find talent, recruitment struggles, open roles)
+- Cost pressures (salaries too high, budget constraints, offshore/nearshore interest)
+- Global workforce issues (managing remote teams, compliance, contractor management, EOR needs)
+- Recruitment process problems (slow hiring, screening bottlenecks, agency frustrations)
 
-1. TALENT DELIVERY: Fill open requisitions with quality APAC talent (40-80% cost savings vs local hires)
-2. EMPLOYMENT INFRASTRUCTURE: Employer of Record (EOR) platform handling payroll, compliance, benefits, contracts across 15+ countries
-3. HIRING ACCELERATION: AI-powered screening, video interviews, and skills assessments to compress time-to-hire from months to weeks
+=== WHAT TO IGNORE ===
+- Job seekers complaining about applications
+- Resume tips and career advice
+- Office politics and interpersonal drama
 
-Our model: Talent first (we source and screen), then technology (our platform manages the full employment lifecycle).
-
-=== TARGET SEGMENT ===
-Audience: {audience}
-
-Strategic Priorities for This Segment:
-{priorities_list}
-
-=== YOUR TASK ===
-Score these Reddit posts for relevance to Outstaffer's solutions. You're looking for posts that reveal hiring pain points, workforce challenges, or compliance headaches that our recruitment + EOR + platform can solve.
-
-POSTS TO EVALUATE:
+=== POSTS TO SCORE ===
 {posts_summary}
 
-=== SCORING FRAMEWORK (0-10) ===
-
-HIGH-VALUE INDICATORS (7-10 points):
-• Explicit hiring challenges: "can't find qualified developers", "recruitment agencies aren't delivering", "need offshore talent but compliance is complex"
-• Cost/budget pressure: "salaries too high", "need to reduce hiring costs", "exploring nearshore/offshore options"
-• Speed/capacity issues: "requisitions sitting open for months", "recruitment team overwhelmed", "need to scale hiring fast"
-• Global workforce friction: "managing contractors across countries is a nightmare", "EOR options too expensive", "payroll compliance confusion"
-• Process bottlenecks: "screening hundreds of resumes manually", "interview scheduling chaos", "candidate dropout during lengthy processes"
-• Platform/tool gaps: "ATS doesn't integrate with payroll", "need unified HRIS for global team", "tracking compliance across regions is manual"
-
-MODERATE-VALUE INDICATORS (4-6 points):
-• General workforce complaints without clear solution path: "hiring is broken", "HR is understaffed"
-• Adjacent problems: onboarding issues, performance management, retention challenges (we don't directly solve these but they indicate hiring volume)
-• Industry trends: discussions about remote work, AI in HR, future of recruitment (useful context but not direct pain points)
-
-LOW-VALUE INDICATORS (0-3 points):
-• Job seekers complaining about applications/interviews (we serve employers, not candidates)
-• Generic career advice or resume tips
-• Company culture discussions without hiring/workforce angle
-• Individual job search struggles
-• Salary negotiation tactics (unless from employer perspective about budget constraints)
-• Office politics, interpersonal conflicts, management drama
-
-=== SCORING INSTRUCTIONS ===
-For each post, assign a relevance_score (0-10) based on:
-1. Does it describe a problem Outstaffer directly solves? (0-5 points)
-2. Is the poster in our target segment or discussing enterprise-scale challenges? (0-3 points)
-3. Is there urgency, budget impact, or strategic importance mentioned? (0-2 points)
+=== SCORING (0-10) ===
+- 8-10: Direct hiring/workforce pain point Outstaffer solves
+- 5-7: Related to hiring/HR but indirect fit
+- 0-4: Job seeker perspective or unrelated
 
 === RESPONSE FORMAT ===
-Return ONLY a valid JSON array with this exact structure:
+Return ONLY a JSON array (no markdown, no backticks, no explanatory text):
 
 [
-  {{
-    "post_index": 0,
-    "relevance_score": 8.5,
-    "quick_reason": "Enterprise hiring manager struggling with offshore developer sourcing and EOR compliance - direct fit for our talent + platform solution"
-  }},
-  {{
-    "post_index": 1,
-    "relevance_score": 2.0,
-    "quick_reason": "Job seeker venting about application process - not our buyer persona"
-  }}
+  {{"post_index": 0, "relevance_score": 7.5, "quick_reason": "Brief reason"}},
+  {{"post_index": 1, "relevance_score": 3.0, "quick_reason": "Brief reason"}}
 ]
 
 CRITICAL REQUIREMENTS:
-• Return ONLY the JSON array, no markdown fences, no backticks, no explanatory text before or after
-• Array length MUST exactly match the number of posts provided
-• Every object MUST include: post_index (integer), relevance_score (number), quick_reason (string)
-• post_index starts at 0 and increments sequentially
-• relevance_score can be integer or float (e.g., 7.5, 8, 6.0)
-• quick_reason should be one concise sentence explaining the score
-• If a post is unclear or has insufficient info, score it 5.0 with reason: "Ambiguous relevance - insufficient context to assess fit"
-• Validate your JSON structure before returning - it must be parseable
-
-=== SCORING EXAMPLES ===
-
-POST: "Our startup is hiring 20 engineers but can't compete with FAANG salaries. Considering offshore but worried about quality and timezone issues."
-SCORE: 9.0 - "Explicit need for cost-effective offshore engineering talent with quality concerns we address through APAC screening and delivery"
-
-POST: "Been applying to 200 jobs, only got 3 interviews. This market is brutal for candidates."
-SCORE: 1.5 - "Job seeker perspective, not employer pain point - outside our target buyer persona"
-
-POST: "Our HR team uses 5 different systems for global payroll, compliance, and contractor management. Integration nightmare and data is everywhere."
-SCORE: 8.5 - "Clear EOR and HRIS consolidation opportunity - our unified platform solves this exact fragmentation problem"
-
-POST: "What's the best way to format a resume for ATS systems?"
-SCORE: 0.5 - "Candidate-focused resume advice, zero relevance to employer hiring challenges"
-
-POST: "Laid off 50 people today. Feels terrible but company needs to cut costs."
-SCORE: 3.0 - "Cost pressure context but no clear hiring/staffing angle where we add value"
-
-POST: "Considering replacing our recruitment agency. They charge 25% and delivery is slow. Any alternatives?"
-SCORE: 9.5 - "Direct competitor displacement opportunity - agency dissatisfaction with cost and speed, our core value props"
+- Array must have exactly as many entries as posts provided
+- Use post_index 0, 1, 2, etc. in sequential order
+- Keep quick_reason brief and simple (avoid quotes, newlines, or special characters)
+- If a post title contains quotes, paraphrase them in your reason
+- Return pure JSON only - no markdown fences, no preamble, no explanation

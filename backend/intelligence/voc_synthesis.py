@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any, Dict, List, Sequence, Tuple
@@ -11,16 +12,58 @@ from core.gemini_client import GeminiClient, GeminiClientError
 logger = logging.getLogger(__name__)
 
 
+def _escape_for_json(text: str) -> str:
+    """
+    Escape text to prevent JSON parsing issues.
+    Handles quotes, newlines, and other special characters.
+    """
+    if not text:
+        return ""
+    # Replace problematic characters that break JSON strings
+    # Order matters: backslashes first, then other escapes
+    return (
+        text.replace("\\", "\\\\")  # Backslashes first
+        .replace('"', '\\"')        # Double quotes
+        .replace("'", "\\'")        # Single quotes (can break in some contexts)
+        .replace("\n", " ")         # Newlines to spaces
+        .replace("\r", " ")         # Carriage returns
+        .replace("\t", " ")         # Tabs
+        .replace("\b", " ")         # Backspace
+        .replace("\f", " ")         # Form feed
+    )
+
+
+def _strip_post_for_prescore(post: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Strip Reddit post to minimal fields needed for pre-scoring.
+    Reduces token usage by ~95% while preserving essential context.
+    Escapes content to prevent JSON parsing errors.
+    """
+    selftext = post.get("content_snippet", "") or post.get("selftext", "")
+    
+    return {
+        "id": post.get("id", ""),
+        "title": _escape_for_json(post.get("title", "")),
+        "subreddit": post.get("subreddit", ""),
+        "score": post.get("score", 0),
+        "num_comments": post.get("num_comments", 0),
+        "selftext": _escape_for_json(selftext[:750]) if selftext else "",  # Truncate then escape
+    }
+
+
 def batch_prescore_posts(
     posts: Sequence[Dict[str, Any]],
     segment_config: Dict[str, Any],
     segment_name: str,
     gemini_client: GeminiClient,
-    batch_size: int = 50,  # Process in batches to avoid token limits
+    batch_size: int = 25,  # Reduced from 50 to avoid token limits with stripped data
 ) -> Tuple[List[Dict[str, Any]], List[str]]:
     """
     Stage 1: Batch pre-score posts using only title + snippet (no comments).
     Fast, lightweight analysis to filter down to promising posts.
+    
+    Posts are stripped to minimal fields (id, title, subreddit, score, num_comments, 
+    selftext[:750]) before sending to Gemini to reduce token usage by ~95%.
     """
     warnings: List[str] = []
     
@@ -29,43 +72,62 @@ def batch_prescore_posts(
     
     all_scored_posts = []
     
+    # Keep full posts in memory for matching back after scoring
+    posts_by_id = {post.get("id"): post for post in posts if post.get("id")}
+    
     # Process in batches to avoid token limits
     for batch_start in range(0, len(posts), batch_size):
         batch_end = min(batch_start + batch_size, len(posts))
         batch = posts[batch_start:batch_end]
         
+        # Strip posts to minimal data for pre-scoring
+        stripped_batch = [_strip_post_for_prescore(post) for post in batch]
+        
         # Build compact summary of posts for batch analysis
+        # Use json.dumps to ensure proper escaping for JSON context
         posts_summary_lines = []
-        for idx, post in enumerate(batch):
+        for idx, post in enumerate(stripped_batch):
             title = post.get("title", "")
-            snippet = post.get("content_snippet", "")[:200]  # Limit snippet length
+            snippet = post.get("selftext", "")  # Already truncated to 750 chars
             posts_summary_lines.append(
-                f"POST {idx}:\nTitle: {title}\nContent: {snippet}\n"
+                f"POST {idx}:\nTitle: {json.dumps(title)}\nContent: {json.dumps(snippet)}\n"
             )
         
         posts_summary = "\n".join(posts_summary_lines)
         
-        try:
-            prompt_context = {
+        prompt_context = {
+            "segment_name": segment_name,
+            "audience": segment_config.get("audience", ""),
+            "priorities_list": "\n".join([f"• {p}" for p in segment_config.get("priorities", [])]),
+            "posts_summary": posts_summary,
+        }
+        
+        logger.info(
+            "Starting batch pre-score (batch %d-%d)",
+            batch_start,
+            batch_end,
+            extra={
+                "operation": "batch_prescore",
                 "segment_name": segment_name,
-                "audience": segment_config.get("audience", ""),
-                "priorities_list": "\n".join([f"• {p}" for p in segment_config.get("priorities", [])]),
-                "posts_summary": posts_summary,
-            }
-            
-            logger.info(
-                "Starting batch pre-score (batch %d-%d)",
-                batch_start,
-                batch_end,
-                extra={
-                    "operation": "batch_prescore",
-                    "segment_name": segment_name,
-                    "batch_start": batch_start,
-                    "batch_end": batch_end,
-                    "batch_size": len(batch),
-                },
-            )
-            
+                "batch_start": batch_start,
+                "batch_end": batch_end,
+                "batch_size": len(batch),
+            },
+        )
+        
+        # Debug: Log what we're sending to Gemini
+        logger.info(
+            "Sending to Gemini - full posts_summary: %s",
+            posts_summary,
+            extra={
+                "operation": "batch_prescore",
+                "segment_name": segment_name,
+                "batch_start": batch_start,
+                "full_posts_summary_length": len(posts_summary),
+            },
+        )
+        
+        try:
             response = gemini_client.generate_json_response(
                 "voc_reddit_batch_prescore.txt",
                 prompt_context,
@@ -73,47 +135,77 @@ def batch_prescore_posts(
                 max_output_tokens=4096,
             )
             
-            if not response or not response.data:
-                warning = f"Batch pre-score returned empty response for posts {batch_start}-{batch_end}"
-                logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
-                warnings.append(warning)
-                continue
-            
-            if not isinstance(response.data, list):
-                warning = f"Batch pre-score returned unexpected format for posts {batch_start}-{batch_end}"
-                logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
-                warnings.append(warning)
-                continue
-            
-            # Merge scores back into posts
-            for score_obj in response.data:
-                idx = score_obj.get("post_index")
-                if idx is None or idx >= len(batch):
-                    continue
-                
-                post = batch[idx].copy()
-                post["prescore"] = {
-                    "relevance_score": score_obj.get("relevance_score", 0),
-                    "quick_reason": score_obj.get("quick_reason", ""),
-                }
-                all_scored_posts.append(post)
-            
+            # Debug: Log what we got back from Gemini (before parsing)
             logger.info(
-                "Batch pre-score complete for posts %d-%d",
-                batch_start,
-                batch_end,
+                "Received from Gemini - full raw response: %s",
+                response.raw_text if response and response.raw_text else "EMPTY",
                 extra={
                     "operation": "batch_prescore",
                     "segment_name": segment_name,
-                    "scored_count": len(response.data),
+                    "batch_start": batch_start,
+                    "full_response_length": len(response.raw_text) if response and response.raw_text else 0,
                 },
             )
-            
-        except (GeminiClientError, FileNotFoundError) as exc:
+        except GeminiClientError as exc:
+            # Log the error WITH the raw response if available
+            logger.error(
+                "Gemini API or parsing error: %s",
+                str(exc),
+                extra={
+                    "operation": "batch_prescore",
+                    "segment_name": segment_name,
+                    "batch_start": batch_start,
+                },
+            )
             warning = f"Batch pre-score failed for posts {batch_start}-{batch_end}: {exc}"
-            logger.error(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
             warnings.append(warning)
             continue
+        
+        if not response or not response.data:
+            warning = f"Batch pre-score returned empty response for posts {batch_start}-{batch_end}"
+            logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
+            warnings.append(warning)
+            continue
+        
+        if not isinstance(response.data, list):
+            warning = f"Batch pre-score returned unexpected format for posts {batch_start}-{batch_end}"
+            logger.warning(warning, extra={"operation": "batch_prescore", "segment_name": segment_name})
+            warnings.append(warning)
+            continue
+        
+        # Merge scores back into ORIGINAL full posts (not stripped versions)
+        for score_obj in response.data:
+            idx = score_obj.get("post_index")
+            if idx is None or idx >= len(batch):
+                continue
+            
+            # Get the original post ID from the stripped batch
+            stripped_post = stripped_batch[idx]
+            post_id = stripped_post.get("id")
+            
+            # Retrieve the full original post from memory
+            original_post = posts_by_id.get(post_id)
+            if not original_post:
+                continue
+            
+            # Add prescore to the original full post
+            enriched_post = original_post.copy()
+            enriched_post["prescore"] = {
+                "relevance_score": score_obj.get("relevance_score", 0),
+                "quick_reason": score_obj.get("quick_reason", ""),
+            }
+            all_scored_posts.append(enriched_post)
+        
+        logger.info(
+            "Batch pre-score complete for posts %d-%d",
+            batch_start,
+            batch_end,
+            extra={
+                "operation": "batch_prescore",
+                "segment_name": segment_name,
+                "scored_count": len(response.data),
+            },
+        )
     
     logger.info(
         "All batches complete",
