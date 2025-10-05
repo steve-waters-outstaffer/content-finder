@@ -9,8 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-import google.generativeai as genai
-from google.generativeai import types
+from google import genai
+from google.genai import types
 
 
 class GeminiClientError(RuntimeError):
