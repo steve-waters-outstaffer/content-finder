@@ -136,7 +136,9 @@ async def batch_prescore_posts(
     raw_client = gemini_client._get_client()
     instructor_client = instructor.from_gemini(raw_client, mode=instructor.Mode.GEMINI_JSON)
     
-    posts_by_id = {post.get("id"): post for post in posts if post.get("id")}
+    # Maintain a concrete sequence of the original posts so we can map results
+    # directly back by index, preserving duplicates and handling missing IDs.
+    original_posts: List[Dict[str, Any]] = list(posts)
     
     logger.info(f"Starting parallel pre-scoring for {len(posts)} posts", extra={"segment_name": segment_name})
 
@@ -155,18 +157,32 @@ async def batch_prescore_posts(
         if isinstance(result, Exception):
             warnings.append(f"Unexpected error for post {idx}: {result}")
             continue
-        
+
         score_obj, error = result
         if error:
             warnings.append(error)
             continue
-        
-        # Match back to original post
-        original_post_id = list(posts_by_id.keys())[idx]
-        original_post = posts_by_id.get(original_post_id)
-        if not original_post:
+
+        # Determine which original post to enrich. Prefer the explicit index
+        # returned by the model but fall back to the current loop index. This
+        # approach keeps alignment with the original sequence even when IDs are
+        # missing or duplicated.
+        target_index = idx
+        if score_obj and score_obj.post_index is not None:
+            target_index = score_obj.post_index
+
+        if target_index < 0 or target_index >= len(original_posts):
+            warnings.append(
+                f"Post index {target_index} out of range for post {idx}; falling back to loop index"
+            )
+            target_index = idx
+
+        if target_index >= len(original_posts):
+            warnings.append(f"Loop index {idx} out of range; skipping enrichment")
             continue
-        
+
+        original_post = original_posts[target_index]
+
         # Enrich original post
         enriched = original_post.copy()
         enriched["prescore"] = {
