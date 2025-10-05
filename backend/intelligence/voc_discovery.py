@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -15,7 +16,7 @@ from intelligence.voc_reddit import (
     RedditHistoryStore,
     load_segment_config,
 )
-from intelligence.voc_synthesis import filter_high_value_posts, generate_curated_queries
+from intelligence.voc_synthesis import batch_prescore_posts, filter_high_value_posts, generate_curated_queries
 from intelligence.voc_trends import fetch_google_trends
 
 logger = logging.getLogger(__name__)
@@ -119,9 +120,30 @@ def run_voc_discovery(
     warnings.extend(reddit_warnings)
     log(f"Collected {len(reddit_posts)} candidate Reddit posts")
 
+    # Pre-score posts to find promising candidates
+    log(f"Starting pre-scoring for {len(reddit_posts)} posts...")
+    prescored_posts, prescore_warnings = asyncio.run(
+        batch_prescore_posts(
+            posts=reddit_posts,
+            segment_config=config,
+            segment_name=segment_name,
+            gemini_client=gemini_client,
+        )
+    )
+    warnings.extend(prescore_warnings)
+
+    # Filter promising posts based on prescore
+    min_prescore = config.get("prescore_threshold", 6.0)
+    promising_posts = [
+        p for p in prescored_posts
+        if p.get("prescore", {}).get("relevance_score", 0) >= min_prescore
+    ]
+    log(f"Found {len(promising_posts)} promising posts (threshold: >{min_prescore})")
+
+    # Deep enrich only the promising posts
     enriched_posts: List[Dict[str, Any]] = []
     enrich_start = time.perf_counter()
-    for post in reddit_posts:
+    for post in promising_posts:
         enriched, post_warnings = collector.enrich_post(
             post,
             segment_name=segment_name,
@@ -129,8 +151,9 @@ def run_voc_discovery(
         )
         warnings.extend(post_warnings)
         enriched_posts.append(enriched)
+
     logger.info(
-        "Reddit enrichment completed",
+        "Reddit enrichment completed for promising posts",
         extra={
             "segment_name": segment_name,
             "operation": "reddit_enrich",

@@ -12,7 +12,7 @@ from flask import Blueprint, request, jsonify
 
 from intelligence.voc_discovery import load_segment_config
 from intelligence.voc_reddit import RedditDataCollector, RedditHistoryStore
-from intelligence.voc_synthesis import filter_high_value_posts, generate_curated_queries
+from intelligence.voc_synthesis import batch_prescore_posts, filter_high_value_posts, generate_curated_queries
 from intelligence.voc_trends import fetch_google_trends
 from core.gemini_client import GeminiClient
 
@@ -94,94 +94,32 @@ def fetch_reddit():
 
 
 @stages_bp.route('/intelligence/voc-discovery/pre-score-posts', methods=['POST'])
-def pre_score_posts():
-    """
-    Stage 2: Batch pre-score posts using AI (title + snippet only, no comments).
-    Fast relevance scoring to filter down to promising posts.
-    """
-    payload = request.get_json(silent=True) or {}
-    segment_name = payload.get('segment_name')
-    raw_posts = payload.get('raw_posts', [])
+async def pre_score_posts():  # ADD async keyword
+    data = request.get_json()
+    posts = data.get('posts', [])
+    segment_config = data.get('segment_config', {})
+    segment_name = data.get('segment_name', 'unknown')
 
-    if not segment_name:
-        return jsonify({'error': 'segment_name is required'}), 400
+    gemini_client = GeminiClient()
 
-    if not raw_posts:
-        return jsonify({'error': 'raw_posts is required (from fetch-reddit stage)'}), 400
+    # ADD await keyword
+    prescored_posts, warnings = await batch_prescore_posts(
+        posts=posts,
+        segment_config=segment_config,
+        segment_name=segment_name,
+        gemini_client=gemini_client,
+    )
 
-    try:
-        logger.info(
-            "Starting batch pre-score",
-            extra={
-                "operation": "prescore_stage",
-                "segment_name": segment_name,
-                "post_count": len(raw_posts),
-            },
-        )
-        start_time = time.perf_counter()
-
-        # Load config
-        config = load_segment_config(segment_name)
-        gemini_client = GeminiClient()
-        
-        # Batch pre-score using title + snippet only (fast)
-        from intelligence.voc_synthesis import batch_prescore_posts
-        prescored_posts, warnings = batch_prescore_posts(
-            raw_posts,
-            config,
-            segment_name,
-            gemini_client,
-        )
-        
-        # Filter by prescore threshold
-        min_prescore = config.get('prescore_threshold', 6.0)
-        promising_posts = [
-            p for p in prescored_posts 
-            if p.get('prescore', {}).get('relevance_score', 0) >= min_prescore
-        ]
-        rejected_posts = [
-            p for p in prescored_posts 
-            if p.get('prescore', {}).get('relevance_score', 0) < min_prescore
-        ]
-
-        duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
-        logger.info(
-            "Batch pre-score completed",
-            extra={
-                "operation": "prescore_stage",
-                "segment_name": segment_name,
-                "prescored_count": len(prescored_posts),
-                "promising_count": len(promising_posts),
-                "threshold": min_prescore,
-                "duration_ms": duration_ms,
-            },
-        )
-
-        return jsonify({
-            "prescored_posts": prescored_posts,
-            "promising_posts": promising_posts,
-            "rejected_posts": rejected_posts,
-            "count": len(promising_posts),
-            "stats": {
-                "input": len(raw_posts),
-                "prescored": len(prescored_posts),
-                "promising": len(promising_posts),
-                "rejected": len(rejected_posts),
-            },
-            "threshold": min_prescore,
-            "warnings": warnings,
-            "duration_ms": duration_ms,
-        })
-
-    except Exception as exc:
-        logger.exception(
-            "Pre-score failed",
-            extra={
-                "operation": "prescore_stage",
-                "segment_name": segment_name,
-            },
-        )
-        return jsonify({'error': str(exc)}), 500
+    return jsonify({
+        'success': True,
+        'prescored_posts': prescored_posts,
+        'warnings': warnings,
+        'stats': {
+            'input_count': len(posts),
+            'scored_count': len(prescored_posts),
+            'success_rate': len(prescored_posts) / len(posts) if posts else 0
+        }
+    })
 
 
 @stages_bp.route('/intelligence/voc-discovery/enrich-posts', methods=['POST'])
