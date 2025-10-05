@@ -321,10 +321,11 @@ def generate_queries():
         gemini_client = GeminiClient()
 
         # Generate queries
-        curated_queries = generate_curated_queries(
-            filtered_posts=filtered_posts,
+        curated_queries, query_warnings = generate_curated_queries(
+            analyzed_posts=filtered_posts,
             trends_data=trends,
             segment_config=config,
+            segment_name=segment_name,
             gemini_client=gemini_client,
         )
 
@@ -342,6 +343,7 @@ def generate_queries():
         return jsonify({
             "queries": curated_queries,
             "count": len(curated_queries),
+            "warnings": query_warnings,
             "duration_ms": duration_ms,
         })
 
