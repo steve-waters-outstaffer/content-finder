@@ -1,36 +1,34 @@
-You are scoring Reddit posts for relevance to Outstaffer, a recruitment platform focused on helping companies hire APAC talent and manage global workforces.
+You are analyzing Reddit posts for relevance to: {segment_name}
 
-=== WHAT WE'RE LOOKING FOR ===
-Posts about:
-- Hiring challenges (can't find talent, recruitment struggles, open roles)
-- Cost pressures (salaries too high, budget constraints, offshore/nearshore interest)
-- Global workforce issues (managing remote teams, compliance, contractor management, EOR needs)
-- Recruitment process problems (slow hiring, screening bottlenecks, agency frustrations)
+Target Audience: {audience}
 
-=== WHAT TO IGNORE ===
-- Job seekers complaining about applications
-- Resume tips and career advice
-- Office politics and interpersonal drama
+Key Priorities:
+{priorities_list}
 
-=== POSTS TO SCORE ===
-{posts_summary}
+=== INPUT POSTS (JSONL FORMAT - ONE POST PER LINE) ===
+{posts_json}
 
-=== SCORING (0-10) ===
-- 8-10: Direct hiring/workforce pain point Outstaffer solves
-- 5-7: Related to hiring/HR but indirect fit
-- 0-4: Job seeker perspective or unrelated
+=== SCORING CRITERIA ===
+Score each post from 0-10 based on relevance to the segment topic and audience:
+- 8-10: Highly relevant, directly addresses topic and resonates with audience
+- 5-7: Moderately relevant, tangentially related or partial match
+- 0-4: Low relevance or off-topic
 
 === RESPONSE FORMAT ===
-Return ONLY a JSON array with exactly {batch_size} entries (no markdown, no backticks, no explanatory text):
-
-[
-  {{"post_index": 0, "relevance_score": 7.5, "quick_reason": "Brief reason"}},
-  {{"post_index": 1, "relevance_score": 3.0, "quick_reason": "Brief reason"}}
-]
+Return EXACTLY {batch_size} lines in JSONL format (one JSON object per line).
+Each line must contain: post_index (number), score (number 0-10), reason (brief text).
 
 CRITICAL REQUIREMENTS:
-- Array must have exactly {batch_size} entries
-- Use post_index 0, 1, 2, etc. in sequential order
-- Keep quick_reason brief (under 15 words) and simple (no quotes, newlines, or special characters)
-- If a post title contains quotes, paraphrase them in your reason
-- Return pure JSON only - no markdown fences, no preamble, no explanation
+✓ Output EXACTLY {batch_size} lines (one per input post)
+✓ Each line MUST be valid JSON with ONLY these 3 fields: post_index, score, reason
+✓ NO array brackets [ ], NO markdown fences, NO extra formatting
+✓ reason must be ONE sentence, no quotes or newlines inside the string
+✓ Use double quotes for strings, numbers without quotes
+✓ No trailing commas
+
+EXAMPLE OUTPUT (do NOT copy these scores):
+{{"post_index": 0, "score": 8.5, "reason": "Directly discusses hiring challenges in target market"}}
+{{"post_index": 1, "score": 3.0, "reason": "Off-topic discussion about unrelated industry"}}
+{{"post_index": 2, "score": 6.5, "reason": "Mentions cost concerns but lacks depth on hiring"}}
+
+Now score all {batch_size} posts:
