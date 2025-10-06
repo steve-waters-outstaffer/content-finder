@@ -7,6 +7,7 @@ import json
 
 from .firecrawl_client import FirecrawlClient
 from .gemini_client import GeminiClient
+from intelligence.models import ArticleAnalysis, MultiArticleAnalysis
 
 
 class ContentPipeline:
@@ -79,12 +80,22 @@ class ContentPipeline:
         for scrape_result in successful_scrapes:
             if scrape_result.get('markdown'):
                 print(f"🤖 Analyzing: {scrape_result['url']}")
-                analysis = self.gemini.analyze_content(scrape_result['markdown'])
-                analysis['source_url'] = scrape_result['url']
-                analyses.append(analysis)
-        
+                try:
+                    analysis_model = self.gemini.analyze_article_structured(scrape_result['markdown'])
+                    analyses.append({
+                        'source_url': scrape_result['url'],
+                        'analyzed_at': datetime.now().isoformat(),
+                        'analysis': analysis_model.model_dump(),
+                    })
+                except Exception as exc:  # noqa: BLE001 - surface downstream errors in pipeline output
+                    analyses.append({
+                        'source_url': scrape_result['url'],
+                        'analyzed_at': datetime.now().isoformat(),
+                        'error': str(exc),
+                    })
+
         pipeline_result['steps']['analyze'] = analyses
-        successful_analyses = [a for a in analyses if a.get('success', False)]
+        successful_analyses = [a for a in analyses if a.get('analysis')]
         print(f"✓ Analyzed {len(successful_analyses)}/{len(successful_scrapes)} scraped documents")
         
         # Save results
@@ -100,13 +111,37 @@ class ContentPipeline:
         """Run scraping-only operation"""
         return self.firecrawl.scrape_urls(urls)
     
-    def analyze_content(self, content: str, custom_prompt: str = None) -> Dict[str, Any]:
-        """Run analysis-only operation"""
-        return self.gemini.analyze_content(content, custom_prompt)
+    def analyze_content(self, content: str, custom_prompt: str = None) -> ArticleAnalysis:
+        """Run analysis-only operation returning structured article insights."""
 
-    def synthesize_article(self, query: str, contents: List[Dict[str, str]]) -> Dict[str, Any]:
-        """Passes multiple documents to Gemini for synthesis."""
-        return self.gemini.synthesize_content(query, contents)
+        if custom_prompt:
+            raise ValueError("Custom prompts are not supported for structured article analysis.")
+
+        return self.gemini.analyze_article_structured(content)
+
+    def synthesize_article(self, query: str, contents: List[Dict[str, str]]) -> MultiArticleAnalysis:
+        """Combine multiple articles and request a structured synthesis."""
+
+        combined_chunks = []
+        for doc in contents:
+            body = doc.get('markdown') or doc.get('content') or ''
+            combined_chunks.append(
+                f"URL: {doc.get('url', 'N/A')}\n"
+                f"Title: {doc.get('title', 'N/A')}\n"
+                f"Content Snippet:\n{body[:2000]}\n\n---\n"
+            )
+
+        prompt_context = {"combined_content": "\n".join(combined_chunks)}
+
+        response = self.gemini.generate_structured_response(
+            "multi_article_analysis_prompt.txt",
+            prompt_context,
+            response_model=MultiArticleAnalysis,
+            temperature=0.4,
+            max_output_tokens=4096,
+        )
+
+        return response
 
     def _save_pipeline_results(self, results: Dict[str, Any], output_dir: Path):
         """Save pipeline results to files"""
@@ -132,20 +167,20 @@ class ContentPipeline:
         if results.get('steps', {}).get('analyze'):
             analysis_dir = output_dir / "analysis"
             analysis_dir.mkdir(exist_ok=True)
-            
+
             for i, analysis in enumerate(results['steps']['analyze']):
-                if analysis.get('success'):
+                if analysis.get('analysis'):
                     source_filename = self._sanitize_filename(analysis.get('source_url', f'analysis_{i}'))
-                    analysis_file = analysis_dir / f"{self.timestamp}_{source_filename}_analysis.md"
-                    
-                    content = f"# Content Analysis\n\n"
-                    content += f"**Source:** {analysis.get('source_url', 'Unknown')}\n"
-                    content += f"**Analyzed:** {analysis.get('analyzed_at', 'Unknown')}\n\n"
-                    content += "---\n\n"
-                    content += analysis.get('analysis', 'No analysis available')
-                    
+                    analysis_file = analysis_dir / f"{self.timestamp}_{source_filename}_analysis.json"
+
+                    payload = {
+                        'source_url': analysis.get('source_url', 'Unknown'),
+                        'analyzed_at': analysis.get('analyzed_at'),
+                        **analysis.get('analysis', {}),
+                    }
+
                     with open(analysis_file, 'w', encoding='utf-8') as f:
-                        f.write(content)
+                        json.dump(payload, f, indent=2, ensure_ascii=False)
     
     def _sanitize_filename(self, url: str) -> str:
         """Convert URL to safe filename"""

@@ -1,5 +1,8 @@
 """Analysis API endpoint"""
-from flask import Blueprint, request, jsonify
+
+from flask import Blueprint, jsonify, request
+
+from core.gemini_client import GeminiClientError
 from core.pipeline import ContentPipeline
 
 
@@ -16,9 +19,15 @@ def analyze_content():
     if not content:
         return jsonify({'error': 'Content is required'}), 400
     
+    pipeline = ContentPipeline()
+
     try:
-        pipeline = ContentPipeline()
-        result = pipeline.analyze_content(content, custom_prompt)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        analysis = pipeline.analyze_content(content, custom_prompt)
+    except ValueError as exc:  # custom prompt not supported
+        return jsonify({'error': str(exc)}), 400
+    except GeminiClientError as exc:
+        return jsonify({'error': str(exc)}), 502
+    except Exception as exc:  # noqa: BLE001 - surface unexpected issues
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify(analysis.model_dump())

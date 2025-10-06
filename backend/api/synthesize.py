@@ -1,5 +1,8 @@
 # backend/api/synthesize.py
-from flask import Blueprint, request, jsonify
+
+from flask import Blueprint, jsonify, request
+
+from core.gemini_client import GeminiClientError
 from core.pipeline import ContentPipeline
 
 synthesize_bp = Blueprint('synthesize', __name__)
@@ -16,10 +19,13 @@ def synthesize_content():
     if not query:
         return jsonify({'error': 'A query or topic is required'}), 400
 
+    pipeline = ContentPipeline()
+
     try:
-        pipeline = ContentPipeline()
-        # We'll create a new method in the pipeline for this
         result = pipeline.synthesize_article(query, contents)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except GeminiClientError as exc:
+        return jsonify({'error': str(exc)}), 502
+    except Exception as exc:  # noqa: BLE001 - surface unexpected issues
+        return jsonify({'error': str(exc)}), 500
+
+    return jsonify(result.model_dump())

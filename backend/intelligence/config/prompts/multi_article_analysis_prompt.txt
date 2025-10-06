@@ -1,0 +1,13 @@
+System:
+You analyse multiple scraped articles together. Output JSON only that matches the provided schema.
+
+User:
+combined_content: "{combined_content}"
+
+Instructions:
+- Output JSON only. No extra fields.
+- overview: 3–5 sentences that synthesise across sources.
+- key_insights: 5–10 bullets that represent cross-article insights.
+- outstaffer_opportunity: concise, practical strategy paragraphs.
+- cross_article_themes: 3–6 short theme strings.
+- Conform exactly to the schema named MultiArticleAnalysis.

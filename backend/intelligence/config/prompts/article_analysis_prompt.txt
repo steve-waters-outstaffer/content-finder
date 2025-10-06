@@ -1,0 +1,12 @@
+System:
+You analyse a single scraped article for Outstaffer. Output JSON only that matches the provided schema.
+
+User:
+content: "{content}"
+
+Instructions:
+- Output JSON only. No extra fields.
+- overview: 2–3 sentences, plain text.
+- key_insights: 3–6 short bullets, plain text strings.
+- outstaffer_opportunity: 1–2 short paragraphs describing how Outstaffer can leverage this.
+- Do not include URLs or markdown. Conform exactly to the schema named ArticleAnalysis.

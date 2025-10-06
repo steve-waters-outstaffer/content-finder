@@ -10,14 +10,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Callable
+from typing import Any, Callable, Dict, Iterable, List, Optional
 
 from dotenv import load_dotenv
 
 from core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
 from core.gemini_client import GeminiClient, GeminiClientError
 from core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
-from intelligence.models import QueryPlan, SynthesisResult
+from intelligence.models import MultiArticleAnalysis, QueryPlan, SynthesisResult
 
 logger = logging.getLogger(__name__)
 
@@ -384,13 +384,17 @@ class AgentResearcher:
         segment_name: str,
         docs: List[Dict[str, Any]],
         log_callback: Optional[Callable[[str, str], None]] = None,
-    ) -> Dict[str, Any]:
-        template_name = "synthesis_prompt.txt"
+        *,
+        quick_research: bool = False,
+    ) -> Dict[str, Any] | MultiArticleAnalysis:
+        template_name = "multi_article_analysis_prompt.txt" if quick_research else "synthesis_prompt.txt"
         if not (self.prompts_dir / template_name).exists():
             logger.warning(
                 "Synthesis prompt template missing; skipping insight generation.",
                 extra={"operation": "agent_synthesis", "segment_name": segment_name},
             )
+            if quick_research:
+                raise GeminiClientError("Synthesis prompt template missing for quick research.")
             return {"content_themes": []}
 
         segment_config = self._get_segment_config(segment_name)
@@ -418,11 +422,16 @@ class AgentResearcher:
                 f"URL: {doc.get('url', 'N/A')}\nTitle: {doc.get('title', 'N/A')}\nContent Snippet:\n{body[:2000]}\n\n---\n"
             )
 
-        prompt_context = {
-            "segment_name": segment_name,
-            "segment_description": segment_description,
-            "combined_content": "\n".join(combined_chunks),
-        }
+        if quick_research:
+            prompt_context: Dict[str, Any] = {
+                "combined_content": "\n".join(combined_chunks),
+            }
+        else:
+            prompt_context = {
+                "segment_name": segment_name,
+                "segment_description": segment_description,
+                "combined_content": "\n".join(combined_chunks),
+            }
 
         logger.info(
             "Generating synthesis",
@@ -451,7 +460,7 @@ class AgentResearcher:
             response = self.gemini.generate_structured_response(
                 template_name,
                 prompt_context,
-                response_model=SynthesisResult,
+                response_model=MultiArticleAnalysis if quick_research else SynthesisResult,
                 model=self.pro_model,
                 temperature=0.4,
                 max_output_tokens=2048,
@@ -477,7 +486,12 @@ class AgentResearcher:
             )
             if log_callback:
                 log_callback(f"Gemini synthesis failed: {exc}", "error")
+            if quick_research:
+                raise
             return {"content_themes": []}
+
+        if quick_research:
+            return response
 
         themes = [theme.model_dump() for theme in response.content_themes]
         logger.info(
