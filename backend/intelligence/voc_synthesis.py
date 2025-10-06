@@ -6,6 +6,7 @@ import html
 import json
 import logging
 import time
+from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
@@ -100,6 +101,24 @@ def pre_score_post(
             "operation": "pre_score_post",
             "segment_name": segment_name,
             "post_id": stripped_post.get("id", ""),
+        },
+    )
+
+    request_payload = {
+        "template_name": "voc_reddit_prescore_prompt.txt",
+        "context": context,
+        "model": gemini_client.default_model,
+        "temperature": 0.0,
+        "max_output_tokens": 2048,
+        "response_schema": deepcopy(PRESCORE_RESPONSE_SCHEMA),
+    }
+    logger.debug(
+        "Gemini pre-score request payload",
+        extra={
+            "operation": "pre_score_post",
+            "segment_name": segment_name,
+            "post_id": stripped_post.get("id", ""),
+            "request_payload": request_payload,
         },
     )
 
