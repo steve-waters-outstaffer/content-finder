@@ -7,10 +7,12 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Type
 
+import instructor
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
 
 
 class GeminiClientError(RuntimeError):
@@ -45,6 +47,7 @@ class GeminiClient:
             / "prompts"
         )
         self._client: Optional[genai.Client] = None
+        self._structured_models: Dict[str, genai.GenerativeModel] = {}
 
     # ---------------------------------------------------------------------
     # Core helpers
@@ -56,6 +59,17 @@ class GeminiClient:
         if self._client is None:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
+
+    def _get_structured_model(self, model_name: str) -> genai.GenerativeModel:
+        """Return a patched generative model for structured responses."""
+
+        if model_name not in self._structured_models:
+            generative_model = genai.GenerativeModel(
+                model_name=model_name,
+                client=self._get_client(),
+            )
+            self._structured_models[model_name] = instructor.patch(generative_model)
+        return self._structured_models[model_name]
 
     def _load_prompt(self, template_name: str) -> str:
         template_path = self.prompt_dir / template_name
@@ -157,6 +171,60 @@ class GeminiClient:
 
         parsed = self.parse_json_response(response.text or "")
         return GeminiJsonResponse(raw_text=response.text or "", data=parsed)
+
+    def generate_structured_response(
+        self,
+        template_name: str,
+        context: Dict[str, Any],
+        *,
+        response_model: Type[BaseModel],
+        model: Optional[str] = None,
+        temperature: float = 0.3,
+        max_output_tokens: int = 2048,
+        system_prompt: Optional[str] = None,
+    ) -> BaseModel:
+        """Render a prompt template and request a structured response from Gemini."""
+
+        prompt_template = self._load_prompt(template_name)
+        try:
+            prompt = prompt_template.format(**context)
+        except KeyError as exc:  # noqa: BLE001
+            missing = exc.args[0]
+            raise GeminiClientError(
+                f"Prompt context missing required key '{missing}' for template '{template_name}'."
+            ) from exc
+
+        if system_prompt:
+            contents: Any = [
+                types.Content(
+                    role="user",
+                    parts=[types.Part.from_text(system_prompt.strip())],
+                ),
+                types.Content(role="user", parts=[types.Part.from_text(prompt.strip())]),
+            ]
+        else:
+            contents = prompt
+
+        generation_config = types.GenerateContentConfig(
+            temperature=temperature,
+            max_output_tokens=max_output_tokens,
+        )
+
+        patched_model = self._get_structured_model(model or self.default_model)
+
+        try:
+            response = patched_model.generate_content(
+                contents,
+                generation_config=generation_config,
+                response_model=response_model,
+            )
+        except Exception as exc:  # noqa: BLE001
+            raise GeminiClientError(f"Gemini API error: {exc}") from exc
+
+        if isinstance(response, BaseModel):
+            return response
+
+        raise GeminiClientError("Gemini returned an unexpected response type for structured output.")
 
     def generate_text(
         self,
