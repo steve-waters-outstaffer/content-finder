@@ -124,13 +124,14 @@ def pre_score_posts():
         config = load_segment_config(segment_name)
         gemini_client = GeminiClient()
         
-        # Batch pre-score using title + snippet only (fast)
-        from intelligence.voc_synthesis import batch_prescore_posts
-        prescored_posts, warnings = batch_prescore_posts(
+        # Pre-score using title + snippet only (fast)
+        from intelligence.voc_synthesis import pre_score_posts
+
+        prescored_posts, warnings = pre_score_posts(
             raw_posts,
-            config,
             segment_name,
-            gemini_client,
+            gemini_client=gemini_client,
+            segment_config=config,
         )
         
         # Filter by prescore threshold

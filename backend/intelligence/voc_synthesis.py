@@ -6,9 +6,15 @@ import html
 import json
 import logging
 import time
-from typing import Any, Dict, List, Sequence, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from core.gemini_client import GeminiClient, GeminiClientError
+from intelligence.models import (
+    PRESCORE_RESPONSE_SCHEMA,
+    PreScoreResult,
+)
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +67,175 @@ def _strip_post_for_prescore(post: Dict[str, Any]) -> Dict[str, Any]:
         "num_comments": post.get("num_comments", 0),
         "content": clean_text_for_json(selftext, max_length=1000),
     }
+
+
+def pre_score_post(
+    post: Dict[str, Any],
+    segment_name: str,
+    *,
+    gemini_client: GeminiClient,
+    segment_config: Optional[Dict[str, Any]] = None,
+) -> PreScoreResult:
+    """Run Gemini pre-scoring for a single Reddit post."""
+
+    segment_config = segment_config or {}
+    stripped_post = _strip_post_for_prescore(post)
+
+    context = {
+        "segment_name": segment_name,
+        "audience": segment_config.get("audience", ""),
+        "priorities": "\n".join(
+            f"• {priority}" for priority in segment_config.get("priorities", [])
+        )
+        or "(no explicit priorities provided)",
+        "post_id": stripped_post.get("id", ""),
+        "post_title": stripped_post.get("title", ""),
+        "post_snippet": stripped_post.get("content", ""),
+        "subreddit": stripped_post.get("subreddit", ""),
+    }
+
+    logger.debug(
+        "Submitting pre-score request",
+        extra={
+            "operation": "pre_score_post",
+            "segment_name": segment_name,
+            "post_id": stripped_post.get("id", ""),
+        },
+    )
+
+    try:
+        response = gemini_client.generate_json_response(
+            template_name="voc_reddit_prescore_prompt.txt",
+            context=context,
+            model=gemini_client.default_model,
+            temperature=0.0,
+            max_output_tokens=512,
+            response_schema=PRESCORE_RESPONSE_SCHEMA,
+        )
+    except GeminiClientError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - surface unexpected errors consistently
+        raise GeminiClientError(f"Gemini pre-score request failed: {exc}") from exc
+
+    try:
+        result = PreScoreResult(**response.data)
+    except ValidationError as exc:  # noqa: BLE001 - validation errors should bubble up
+        logger.warning(
+            "Pre-score validation failed",
+            extra={
+                "operation": "pre_score_post",
+                "segment_name": segment_name,
+                "post_id": stripped_post.get("id", ""),
+                "error": str(exc),
+            },
+        )
+        raise GeminiClientError("Pre-score validation failed") from exc
+
+    logger.debug(
+        "Pre-score successful",
+        extra={
+            "operation": "pre_score_post",
+            "segment_name": segment_name,
+            "post_id": result.post_id,
+            "score": result.score,
+            "priority": result.priority,
+        },
+    )
+    return result
+
+
+def pre_score_posts(
+    posts: Sequence[Dict[str, Any]],
+    segment_name: str,
+    *,
+    gemini_client: GeminiClient,
+    segment_config: Optional[Dict[str, Any]] = None,
+    max_workers: int = 5,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    """Pre-score posts concurrently while collecting warnings."""
+
+    segment_config = segment_config or {}
+    warnings: List[str] = []
+
+    if not posts:
+        return [], warnings
+
+    start_time = time.perf_counter()
+    scored_posts: List[Dict[str, Any]] = []
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_map = {
+            executor.submit(
+                pre_score_post,
+                post,
+                segment_name,
+                gemini_client=gemini_client,
+                segment_config=segment_config,
+            ): (index, post)
+            for index, post in enumerate(posts)
+        }
+
+        for future in as_completed(future_map):
+            index, original_post = future_map[future]
+            post_id = original_post.get("id") or original_post.get("post_id") or ""
+
+            try:
+                prescore_result = future.result()
+            except GeminiClientError as exc:
+                warning = (
+                    f"Pre-score failed for post '{post_id}' in segment '{segment_name}': {exc}"
+                )
+                logger.warning(
+                    warning,
+                    extra={
+                        "operation": "pre_score_post",
+                        "segment_name": segment_name,
+                        "post_id": post_id,
+                    },
+                )
+                warnings.append(warning)
+                continue
+            except Exception as exc:  # noqa: BLE001 - capture unexpected issues per post
+                warning = (
+                    f"Unexpected error during pre-score for post '{post_id}' in segment '{segment_name}': {exc}"
+                )
+                logger.exception(
+                    warning,
+                    extra={
+                        "operation": "pre_score_post",
+                        "segment_name": segment_name,
+                        "post_id": post_id,
+                    },
+                )
+                warnings.append(warning)
+                continue
+
+            enriched_post = original_post.copy()
+            enriched_post["prescore"] = {
+                "relevance_score": prescore_result.score,
+                "priority": prescore_result.priority,
+                "quick_reason": prescore_result.reason or "",
+            }
+            enriched_post["_prescore_index"] = index
+            scored_posts.append(enriched_post)
+
+    scored_posts.sort(key=lambda item: item.get("_prescore_index", 0))
+    for post in scored_posts:
+        post.pop("_prescore_index", None)
+
+    duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    logger.info(
+        "Pre-score complete",
+        extra={
+            "operation": "pre_score",
+            "segment_name": segment_name,
+            "count": len(scored_posts),
+            "failures": len(warnings),
+            "duration_ms": duration_ms,
+        },
+    )
+
+    return scored_posts, warnings
 
 
 def batch_prescore_posts(
