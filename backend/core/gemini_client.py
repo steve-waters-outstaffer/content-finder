@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from dataclasses import dataclass
@@ -11,11 +12,14 @@ from typing import Any, Dict, Optional, Type
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 
 class GeminiClientError(RuntimeError):
     """Raised when the Gemini API cannot return a usable response."""
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -229,13 +233,49 @@ class GeminiClient:
         except Exception as exc:  # noqa: BLE001
             raise GeminiClientError(f"Gemini API error: {exc}") from exc
 
-        # Parse the JSON response into the Pydantic model
+        raw_text = (response.text or "").strip()
+        if not raw_text:
+            logger.error(
+                "Gemini returned an empty structured response.",
+                extra={"operation": "gemini_structured_response", "model": model or self.default_model},
+            )
+            raise GeminiClientError("Gemini returned an empty structured response.")
+
         try:
-            parsed_data = json.loads(response.text or "{}")
-            return response_model.model_validate(parsed_data)
-        except (json.JSONDecodeError, Exception) as exc:
+            return response_model.model_validate_json(raw_text)
+        except ValidationError as exc:
+            error_types = {
+                err.get("type")
+                for err in exc.errors()
+                if isinstance(err, dict)
+            }
+            truncated = raw_text[:500]
+            if "json_invalid" in error_types:
+                logger.error(
+                    "Gemini returned non-JSON payload.",
+                    extra={
+                        "operation": "gemini_structured_response",
+                        "model": model or self.default_model,
+                        "response_preview": truncated,
+                    },
+                )
+                raise GeminiClientError(
+                    "Gemini returned a non-JSON payload when structured output was required. "
+                    f"Raw response: {raw_text}"
+                ) from exc
+
+            logger.error(
+                "Gemini structured response failed validation.",
+                extra={
+                    "operation": "gemini_structured_response",
+                    "model": model or self.default_model,
+                    "response_preview": truncated,
+                    "validation_errors": exc.errors(),
+                },
+            )
             raise GeminiClientError(
-                f"Failed to parse structured response: {exc}\nRaw response: {response.text}"
+                "Gemini structured response failed Pydantic validation. "
+                f"Errors: {exc} Raw response: {raw_text}"
             ) from exc
 
     def generate_text(
