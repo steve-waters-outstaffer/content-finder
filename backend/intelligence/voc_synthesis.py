@@ -109,13 +109,23 @@ def pre_score_post(
             context=context,
             model=gemini_client.default_model,
             temperature=0.0,
-            max_output_tokens=512,
+            max_output_tokens=2048,
             response_schema=PRESCORE_RESPONSE_SCHEMA,
         )
     except GeminiClientError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface unexpected errors consistently
         raise GeminiClientError(f"Gemini pre-score request failed: {exc}") from exc
+
+    logger.debug(
+        "Raw Gemini pre-score response",
+        extra={
+            "operation": "pre_score_post",
+            "segment_name": segment_name,
+            "post_id": stripped_post.get("id", ""),
+            "raw_response": response.raw_text[:500],
+        },
+    )
 
     try:
         result = PreScoreResult(**response.data)
@@ -127,9 +137,22 @@ def pre_score_post(
                 "segment_name": segment_name,
                 "post_id": stripped_post.get("id", ""),
                 "error": str(exc),
+                "raw_response": response.raw_text[:500],
             },
         )
         raise GeminiClientError("Pre-score validation failed") from exc
+    except Exception as exc:
+        logger.exception(
+            "Unexpected error during pre-score processing",
+            extra={
+                "operation": "pre_score_post",
+                "segment_name": segment_name,
+                "post_id": stripped_post.get("id", ""),
+                "error": str(exc),
+                "raw_response": response.raw_text[:500],
+            },
+        )
+        raise
 
     logger.debug(
         "Pre-score successful",
