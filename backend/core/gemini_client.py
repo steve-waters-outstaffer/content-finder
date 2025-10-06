@@ -14,6 +14,8 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+from models.schemas import ArticleAnalysis, MultiArticleAnalysis
+
 
 class GeminiClientError(RuntimeError):
     """Raised when the Gemini API cannot return a usable response."""
@@ -316,6 +318,61 @@ class GeminiClient:
     # ------------------------------------------------------------------
     # Legacy helpers retained for backwards compatibility
     # ------------------------------------------------------------------
+    def analyze_article_structured(
+        self,
+        content: str,
+        *,
+        additional_instructions: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> ArticleAnalysis:
+        """Return a structured analysis for a single article."""
+
+        context = {
+            "content": content,
+            "additional_instructions": additional_instructions or "No additional direction provided.",
+        }
+
+        return self.generate_structured_response(
+            "article_analysis_prompt.txt",
+            context,
+            response_model=ArticleAnalysis,
+            model=model,
+            temperature=0.4,
+            max_output_tokens=2048,
+        )
+
+    def synthesize_multi_article_analysis(
+        self,
+        query: str,
+        contents: list[dict[str, str]],
+        *,
+        model: Optional[str] = None,
+    ) -> MultiArticleAnalysis:
+        """Generate a structured synthesis across multiple articles."""
+
+        source_material = []
+        for idx, doc in enumerate(contents, start=1):
+            chunk = [f"--- Source {idx} ---"]
+            chunk.append(f"URL: {doc.get('url', 'N/A')}")
+            chunk.append(f"Title: {doc.get('title', 'N/A')}")
+            markdown = doc.get("markdown", "")
+            chunk.append(f"Content:\n{markdown[:2000]}")
+            source_material.append("\n".join(chunk))
+
+        context = {
+            "query": query,
+            "source_material": "\n\n".join(source_material),
+        }
+
+        return self.generate_structured_response(
+            "synthesize_article_prompt.txt",
+            context,
+            response_model=MultiArticleAnalysis,
+            model=model,
+            temperature=0.6,
+            max_output_tokens=4096,
+        )
+
     def synthesize_content(
         self,
         query: str,

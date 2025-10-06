@@ -79,13 +79,16 @@ class ContentPipeline:
         for scrape_result in successful_scrapes:
             if scrape_result.get('markdown'):
                 print(f"🤖 Analyzing: {scrape_result['url']}")
-                analysis = self.gemini.analyze_content(scrape_result['markdown'])
-                analysis['source_url'] = scrape_result['url']
-                analyses.append(analysis)
-        
+                analysis = self.gemini.analyze_article_structured(scrape_result['markdown'])
+                analyses.append(
+                    {
+                        "source_url": scrape_result['url'],
+                        "analysis": analysis.model_dump(),
+                    }
+                )
+
         pipeline_result['steps']['analyze'] = analyses
-        successful_analyses = [a for a in analyses if a.get('success', False)]
-        print(f"✓ Analyzed {len(successful_analyses)}/{len(successful_scrapes)} scraped documents")
+        print(f"✓ Analyzed {len(analyses)}/{len(successful_scrapes)} scraped documents")
         
         # Save results
         self._save_pipeline_results(pipeline_result, output_dir)
@@ -102,11 +105,18 @@ class ContentPipeline:
     
     def analyze_content(self, content: str, custom_prompt: str = None) -> Dict[str, Any]:
         """Run analysis-only operation"""
-        return self.gemini.analyze_content(content, custom_prompt)
+
+        analysis = self.gemini.analyze_article_structured(
+            content,
+            additional_instructions=custom_prompt,
+        )
+
+        return analysis.model_dump()
 
     def synthesize_article(self, query: str, contents: List[Dict[str, str]]) -> Dict[str, Any]:
         """Passes multiple documents to Gemini for synthesis."""
-        return self.gemini.synthesize_content(query, contents)
+        synthesis = self.gemini.synthesize_multi_article_analysis(query, contents)
+        return synthesis.model_dump()
 
     def _save_pipeline_results(self, results: Dict[str, Any], output_dir: Path):
         """Save pipeline results to files"""

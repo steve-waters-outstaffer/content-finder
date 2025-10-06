@@ -1,7 +1,30 @@
 """Data models and schemas"""
 from dataclasses import dataclass
-from typing import List, Dict, Any, Optional
 from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class ArticleAnalysis(BaseModel):
+    """Structured summary for a single article."""
+
+    overview: str
+    key_insights: List[str]
+    outstaffer_opportunity: str
+
+    model_config = ConfigDict(extra="forbid")
+
+
+class MultiArticleAnalysis(BaseModel):
+    """Structured synthesis across multiple articles."""
+
+    overview: str
+    key_insights: List[str]
+    outstaffer_opportunity: str
+    cross_article_themes: List[str] = Field(default_factory=list)
+
+    model_config = ConfigDict(extra="forbid")
 
 
 @dataclass

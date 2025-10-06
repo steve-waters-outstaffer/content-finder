@@ -13,7 +13,6 @@ import {
     Accordion,
     AccordionSummary,
     AccordionDetails,
-    Divider,
     Stack,
     Paper,
     Checkbox,
@@ -47,6 +46,28 @@ const ContentFinder = () => {
     const [selectedUrls, setSelectedUrls] = useState(new Set());
     const [isSynthesizing, setIsSynthesizing] = useState(false);
     const [synthesisResult, setSynthesisResult] = useState(null);
+
+    const handleCopyJson = (jsonData) =>
+        navigator.clipboard
+            .writeText(JSON.stringify(jsonData, null, 2))
+            .catch((error) => console.error('Failed to copy JSON', error));
+
+    const handleDownloadJson = (jsonData, filename) => {
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(new Blob([JSON.stringify(jsonData, null, 2)], { type: 'application/json' }));
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    };
+
+    const renderJsonActions = (jsonData, filename) => (
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', gap: 1, mb: 2 }}>
+            <Button size="small" variant="outlined" onClick={() => handleCopyJson(jsonData)}>Copy JSON</Button>
+            <Button size="small" variant="outlined" onClick={() => handleDownloadJson(jsonData, filename)}>Download JSON</Button>
+        </Box>
+    );
 
     // Curated search terms for quick selection
     const curatedTerms = [
@@ -178,7 +199,6 @@ const ContentFinder = () => {
 
                 if (analysisResponse.ok) {
                     analysisResult = await analysisResponse.json();
-                    analysisResult.source_url = url;
                 }
             }
 
@@ -354,7 +374,7 @@ const ContentFinder = () => {
                                                                     </Typography>
                                                                 ) : (
                                                                     <Typography variant="caption" color="success.main">
-                                                                        ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} | Analyzed {processedData.analysis?.success ? '✓' : '✗'}
+                                                                        ✅ Processed: Scraped {processedData.scrape?.success ? '✓' : '✗'} | Analyzed {processedData.analysis ? '✓' : '✗'}
                                                                     </Typography>
                                                                 )}
                                                             </Box>
@@ -386,7 +406,7 @@ const ContentFinder = () => {
     };
 
     const renderAnalysis = () => {
-        const analysisEntries = Object.entries(processedResults).filter(([, data]) => data.analysis?.success && !data.error);
+        const analysisEntries = Object.entries(processedResults).filter(([, data]) => data.analysis && !data.error);
         if (analysisEntries.length === 0) return null;
         return (
             <Card sx={{ mb: 2 }}>
@@ -411,8 +431,21 @@ const ContentFinder = () => {
                                         <Typography variant="body2" fontWeight={FontWeight.SemiBold}>📄 AI Insights</Typography>
                                     </AccordionSummary>
                                     <AccordionDetails>
-                                        <Box sx={{ bgcolor: CustomColors.UIGrey100, p: 2, borderRadius: 1, whiteSpace: 'pre-wrap', mb: 2 }}>
-                                            <Typography variant="body2">{data.analysis.analysis}</Typography>
+                                        <Box sx={{ bgcolor: CustomColors.UIGrey100, p: 2, borderRadius: 1, mb: 2 }}>
+                                            {renderJsonActions(data.analysis, `article-analysis-${index + 1}.json`)}
+                                            <Typography variant="body2" paragraph>{data.analysis?.overview || 'No overview available.'}</Typography>
+                                            {data.analysis?.key_insights?.length ? (
+                                                <Box component="ul" sx={{ pl: 3, mb: 2 }}>
+                                                    {data.analysis.key_insights.map((insight, insightIndex) => (
+                                                        <li key={insightIndex}>
+                                                            <Typography variant="body2">{insight}</Typography>
+                                                        </li>
+                                                    ))}
+                                                </Box>
+                                            ) : (
+                                                <Typography variant="body2" color="text.secondary" paragraph>No key insights provided.</Typography>
+                                            )}
+                                            <Typography variant="body2">{data.analysis?.outstaffer_opportunity || 'No opportunity identified.'}</Typography>
                                         </Box>
                                         {renderStarRating(contentRatings[url], (rating) => handleContentRating(url, rating), 'Analysis Usefulness')}
                                     </AccordionDetails>
@@ -438,38 +471,9 @@ const ContentFinder = () => {
     const renderSynthesisResult = () => {
         if (!synthesisResult) return null;
 
-        // Helper function to render the LinkedIn post in a styled paper
-        const renderLinkedInPost = (post) => {
-            if (!post) return null;
-            return (
-                <Paper elevation={0} sx={{ p: 2, bgcolor: CustomColors.UIGrey100, mt: 1 }}>
-                    <Typography variant="subtitle2" fontWeight={FontWeight.SemiBold}>Angle: {post.angle}</Typography>
-                    <Divider sx={{ my: 1 }} />
-                    <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap', my: 2 }}>{post.text}</Typography>
-                    <Typography variant="caption" color="text.secondary">{post.hashtags?.join(' ')}</Typography>
-                </Paper>
-            );
-        };
-
-        // Helper function to render the article and handle markdown titles
-        const renderArticle = (articleText) => {
-            if (!articleText) return <Typography>No article content available.</Typography>;
-
-            // Split article into paragraphs and render them, converting "## Title" to a heading
-            return articleText.split(/\\n\\n+/).map((paragraph, index) => {
-                if (paragraph.startsWith('## ')) {
-                    return <Typography key={index} variant="h5" sx={{ mt: 2, mb: 1 }}>{paragraph.replace('## ', '')}</Typography>
-                }
-                // Replace any other markdown for clean text
-                const cleanParagraph = paragraph.replace(/(\*\*|##)/g, '');
-                return <Typography key={index} paragraph>{cleanParagraph}</Typography>
-            });
-        };
-
         return (
             <Card sx={{ mb: 3 }}>
                 <CardContent>
-                    {/* Accordion for the Synthesized Article */}
                     <Accordion defaultExpanded>
                         <AccordionSummary
                             expandIcon={<ExpandMoreIcon />}
@@ -477,44 +481,38 @@ const ContentFinder = () => {
                         >
                             <Typography variant="h6">
                                 <AssignmentIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                Synthesized Research Article
+                                Synthesized Insights
                             </Typography>
                         </AccordionSummary>
                         <AccordionDetails sx={{ pt: 2 }}>
-                            {renderArticle(synthesisResult.article)}
-                        </AccordionDetails>
-                    </Accordion>
-
-                    {/* Accordion for the Strategic Insights */}
-                    <Accordion defaultExpanded sx={{ mt: 2 }}>
-                        <AccordionSummary
-                            expandIcon={<ExpandMoreIcon />}
-                            sx={{ bgcolor: CustomColors.AliceBlue, borderRadius: 1 }}
-                        >
-                            <Typography variant="h6">
-                                <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                                Outstaffer Strategic Insights
+                            {renderJsonActions(synthesisResult, 'multi-article-analysis.json')}
+                            <Typography variant="body2" color="text.primary" paragraph>
+                                Overview: {synthesisResult.overview || 'No overview available.'}
                             </Typography>
-                        </AccordionSummary>
-                        <AccordionDetails sx={{ pt: 2 }}>
-                            {synthesisResult.outstaffer_analysis && (
-                                <>
-                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>Relevance & Opportunity</Typography>
-                                    <Typography variant="body2" color="text.secondary" paragraph>
-                                        {synthesisResult.outstaffer_analysis.relevance_opportunity}
-                                    </Typography>
-
-                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>Key Talking Point</Typography>
-                                    <Typography variant="body2" color="text.secondary" paragraph>
-                                        {synthesisResult.outstaffer_analysis.key_talking_point}
-                                    </Typography>
-                                </>
+                            {synthesisResult.key_insights?.length ? (
+                                <Box component="ul" sx={{ pl: 3, mb: 2 }}>
+                                    {synthesisResult.key_insights.map((insight, index) => (
+                                        <li key={index}>
+                                            <Typography variant="body2">{insight}</Typography>
+                                        </li>
+                                    ))}
+                                </Box>
+                            ) : (
+                                <Typography variant="body2" color="text.secondary" paragraph>No key insights provided.</Typography>
                             )}
-                            {synthesisResult.linkedin_post && (
-                                <>
-                                    <Typography variant="subtitle1" fontWeight={FontWeight.SemiBold}>LinkedIn Post Idea</Typography>
-                                    {renderLinkedInPost(synthesisResult.linkedin_post)}
-                                </>
+                            <Typography variant="body2" color="text.primary" paragraph>
+                                Outstaffer opportunity: {synthesisResult.outstaffer_opportunity || 'No opportunity identified.'}
+                            </Typography>
+                            {synthesisResult.cross_article_themes?.length ? (
+                                <Box component="ul" sx={{ pl: 3, mb: 0 }}>
+                                    {synthesisResult.cross_article_themes.map((theme, index) => (
+                                        <li key={index}>
+                                            <Typography variant="body2">{theme}</Typography>
+                                        </li>
+                                    ))}
+                                </Box>
+                            ) : (
+                                <Typography variant="body2" color="text.secondary">No recurring themes identified.</Typography>
                             )}
                         </AccordionDetails>
                     </Accordion>
