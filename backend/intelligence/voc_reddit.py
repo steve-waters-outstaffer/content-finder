@@ -435,6 +435,7 @@ class RedditDataCollector:
 
         discussion_text = self._build_discussion_summary(post, comments_payload)
 
+        raw_response_snippet = ""
         try:
             prompt_context = {
                 "segment_name": segment_name,
@@ -447,8 +448,18 @@ class RedditDataCollector:
                 prompt_context,
                 model=self.advanced_model,
                 temperature=0.0,
-                max_output_tokens=1024,
+                max_output_tokens=2048,
                 response_schema=REDDIT_ANALYSIS_RESPONSE_SCHEMA,
+            )
+            raw_response_snippet = response.raw_text[:500]
+            logger.debug(
+                "Raw Gemini Reddit analysis response",
+                extra={
+                    "operation": "reddit_enrich",
+                    "segment_name": segment_name,
+                    "post_id": post.get("id"),
+                    "raw_response": raw_response_snippet,
+                },
             )
             try:
                 analysis = RedditAnalysis(**response.data)
@@ -462,6 +473,7 @@ class RedditDataCollector:
                         "operation": "reddit_enrich",
                         "segment_name": segment_name,
                         "post_id": post.get("id"),
+                        "raw_response": raw_response_snippet,
                     },
                 )
                 warnings.append(warning)
@@ -475,6 +487,21 @@ class RedditDataCollector:
                     "operation": "reddit_enrich",
                     "segment_name": segment_name,
                     "post_id": post.get("id"),
+                    "raw_response": raw_response_snippet,
+                },
+            )
+            warnings.append(warning)
+        except Exception as exc:
+            warning = (
+                f"Unexpected error during Gemini Reddit analysis for post '{post.get('id')}': {exc}"
+            )
+            logger.exception(
+                warning,
+                extra={
+                    "operation": "reddit_enrich",
+                    "segment_name": segment_name,
+                    "post_id": post.get("id"),
+                    "raw_response": raw_response_snippet,
                 },
             )
             warnings.append(warning)
