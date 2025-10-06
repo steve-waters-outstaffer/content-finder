@@ -10,13 +10,14 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Callable
 
 from dotenv import load_dotenv
 
 from core.firecrawl_client import AsyncFirecrawlClient, ScrapeResult
 from core.gemini_client import GeminiClient, GeminiClientError
 from core.tavily_client import TavilyApiClient, TavilyClientError, TavilyResult
+from intelligence.models import QueryPlan, SynthesisResult
 
 logger = logging.getLogger(__name__)
 
@@ -154,7 +155,13 @@ class AgentResearcher:
     # ------------------------------------------------------------------
     # Core research workflow
     # ------------------------------------------------------------------
-    async def plan_queries(self, mission: str, segment_name: str, max_queries: int = 10) -> List[str]:
+    async def plan_queries(
+        self,
+        mission: str,
+        segment_name: str,
+        max_queries: int = 10,
+        log_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> List[str]:
         planner_context = self.get_planner_prompt(segment_name)
 
         logger.info(
@@ -166,20 +173,61 @@ class AgentResearcher:
                 "max_queries": max_queries,
             },
         )
+
+        logger.debug(
+            "Planner prompt context assembled for Gemini.",
+            extra={
+                "operation": "agent_plan_queries",
+                "segment_name": segment_name,
+                "planner_context": planner_context,
+            },
+        )
+        if log_callback:
+            log_callback(
+                f"Planner prompt context assembled for Gemini.\n{planner_context}",
+                "debug",
+            )
+
         try:
             start_time = time.perf_counter()
-            response = self.gemini.generate_json_response(
+            logger.info(
+                "Sending query generation request to Gemini with model %s.",
+                self.flash_model,
+                extra={
+                    "operation": "agent_plan_queries",
+                    "segment_name": segment_name,
+                    "model": self.flash_model,
+                },
+            )
+            if log_callback:
+                log_callback(
+                    f"Sending query generation request to Gemini with model {self.flash_model}.",
+                    "info",
+                )
+
+            response = self.gemini.generate_structured_response(
                 "agent_research_planner_prompt.txt",
                 {
                     "planner_context": planner_context,
                     "mission": mission,
                     "max_queries": max_queries,
                 },
+                response_model=QueryPlan,
                 model=self.flash_model,
                 temperature=0.3,
                 max_output_tokens=1024,
             )
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.info(
+                "Received response from Gemini for query planning.",
+                extra={
+                    "operation": "agent_plan_queries",
+                    "segment_name": segment_name,
+                    "duration_ms": duration_ms,
+                },
+            )
+            if log_callback:
+                log_callback("Received response from Gemini for query planning.", "info")
         except GeminiClientError as exc:
             logger.exception(
                 "Query planning failed",
@@ -189,28 +237,40 @@ class AgentResearcher:
                     "mission": mission,
                 },
             )
+            if log_callback:
+                log_callback(f"Gemini query planning failed: {exc}", "error")
             return [mission]
 
-        payload = response.data
-        if isinstance(payload, dict):
-            candidates = payload.get("queries")
-        else:
-            candidates = payload
+        final_queries = [
+            item.query.strip()
+            for item in response.queries
+            if isinstance(item.query, str) and item.query.strip()
+        ]
+        logger.info(
+            "Successfully parsed %s queries from Gemini response.",
+            len(final_queries),
+            extra={
+                "operation": "agent_plan_queries",
+                "segment_name": segment_name,
+                "duration_ms": locals().get("duration_ms"),
+            },
+        )
+        if log_callback:
+            log_callback(
+                f"Successfully parsed {len(final_queries)} queries from Gemini response.",
+                "info",
+            )
 
-        queries: List[str] = []
-        for item in candidates or []:
-            if isinstance(item, str) and item.strip():
-                queries.append(item.strip())
         logger.info(
             "Query planning completed",
             extra={
                 "operation": "agent_plan_queries",
                 "segment_name": segment_name,
-                "count": len(queries[:max_queries] or [mission]),
+                "count": len(final_queries[:max_queries] or [mission]),
                 "duration_ms": locals().get("duration_ms"),
             },
         )
-        return queries[:max_queries] or [mission]
+        return final_queries[:max_queries] or [mission]
 
     async def tavily_search(self, query: str, max_results: int = 5) -> Dict[str, Any]:
         logger.debug(
@@ -318,7 +378,13 @@ class AgentResearcher:
         )
         return deduped
 
-    def synthesize_insights(self, mission: str, segment_name: str, docs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def synthesize_insights(
+        self,
+        mission: str,
+        segment_name: str,
+        docs: List[Dict[str, Any]],
+        log_callback: Optional[Callable[[str, str], None]] = None,
+    ) -> Dict[str, Any]:
         template_name = "synthesis_prompt.txt"
         if not (self.prompts_dir / template_name).exists():
             logger.warning(
@@ -329,6 +395,21 @@ class AgentResearcher:
 
         segment_config = self._get_segment_config(segment_name)
         segment_description = segment_config.get("description", "")
+
+        logger.info(
+            "Combining content from %s scraped documents for synthesis.",
+            len(docs),
+            extra={
+                "operation": "agent_synthesis",
+                "segment_name": segment_name,
+                "doc_count": len(docs),
+            },
+        )
+        if log_callback:
+            log_callback(
+                f"Combining content from {len(docs)} scraped documents for synthesis.",
+                "info",
+            )
 
         combined_chunks = []
         for doc in docs:
@@ -351,16 +432,41 @@ class AgentResearcher:
                 "doc_count": len(docs),
             },
         )
+        if log_callback:
+            log_callback(
+                f"Sending synthesis request to Gemini with model {self.pro_model}.",
+                "info",
+            )
         try:
             start_time = time.perf_counter()
-            response = self.gemini.generate_json_response(
+            logger.info(
+                "Sending synthesis request to Gemini with model %s.",
+                self.pro_model,
+                extra={
+                    "operation": "agent_synthesis",
+                    "segment_name": segment_name,
+                    "model": self.pro_model,
+                },
+            )
+            response = self.gemini.generate_structured_response(
                 template_name,
                 prompt_context,
+                response_model=SynthesisResult,
                 model=self.pro_model,
                 temperature=0.4,
                 max_output_tokens=2048,
             )
             duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+            logger.info(
+                "Received response from Gemini for synthesis.",
+                extra={
+                    "operation": "agent_synthesis",
+                    "segment_name": segment_name,
+                    "duration_ms": duration_ms,
+                },
+            )
+            if log_callback:
+                log_callback("Received response from Gemini for synthesis.", "info")
         except GeminiClientError as exc:
             logger.exception(
                 "Synthesis failed",
@@ -369,21 +475,26 @@ class AgentResearcher:
                     "segment_name": segment_name,
                 },
             )
+            if log_callback:
+                log_callback(f"Gemini synthesis failed: {exc}", "error")
             return {"content_themes": []}
 
-        data = response.data
-        if isinstance(data, list):
-            logger.info(
-                "Synthesis completed",
-                extra={
-                    "operation": "agent_synthesis",
-                    "segment_name": segment_name,
-                    "themes_generated": len(data),
-                    "duration_ms": duration_ms,
-                },
+        themes = [theme.model_dump() for theme in response.content_themes]
+        logger.info(
+            "Synthesis completed",
+            extra={
+                "operation": "agent_synthesis",
+                "segment_name": segment_name,
+                "themes_generated": len(themes),
+                "duration_ms": duration_ms,
+            },
+        )
+        if log_callback:
+            log_callback(
+                f"Synthesis completed with {len(themes)} themes generated.",
+                "info",
             )
-            return {"content_themes": data}
-        return {"content_themes": []}
+        return {"content_themes": themes}
 
     async def run_segment_research(
         self,
