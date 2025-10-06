@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import time
+from copy import deepcopy
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
@@ -443,6 +444,23 @@ class RedditDataCollector:
                 "subreddit": post.get("subreddit", ""),
                 "discussion_text": discussion_text,
             }
+            gemini_request_payload = {
+                "template_name": "voc_reddit_analysis_prompt.txt",
+                "context": prompt_context,
+                "model": self.advanced_model,
+                "temperature": 0.0,
+                "max_output_tokens": 2048,
+                "response_schema": deepcopy(REDDIT_ANALYSIS_RESPONSE_SCHEMA),
+            }
+            logger.debug(
+                "Gemini Reddit analysis request payload",
+                extra={
+                    "operation": "reddit_enrich",
+                    "segment_name": segment_name,
+                    "post_id": post.get("id"),
+                    "request_payload": gemini_request_payload,
+                },
+            )
             response = self.gemini.generate_json_response(
                 "voc_reddit_analysis_prompt.txt",
                 prompt_context,
