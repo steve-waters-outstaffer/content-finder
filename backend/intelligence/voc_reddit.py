@@ -15,6 +15,11 @@ import requests
 from google.cloud import firestore
 
 from core.gemini_client import GeminiClient, GeminiClientError
+from intelligence.models import (
+    REDDIT_ANALYSIS_RESPONSE_SCHEMA,
+    RedditAnalysis,
+)
+from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -441,13 +446,27 @@ class RedditDataCollector:
                 "voc_reddit_analysis_prompt.txt",
                 prompt_context,
                 model=self.advanced_model,
-                temperature=0.2,
+                temperature=0.0,
                 max_output_tokens=1024,
+                response_schema=REDDIT_ANALYSIS_RESPONSE_SCHEMA,
             )
-            if isinstance(response.data, dict):
-                post["ai_analysis"] = response.data
+            try:
+                analysis = RedditAnalysis(**response.data)
+            except ValidationError as exc:
+                warning = (
+                    f"Gemini Reddit analysis validation failed for post '{post.get('id')}': {exc}"
+                )
+                logger.warning(
+                    warning,
+                    extra={
+                        "operation": "reddit_enrich",
+                        "segment_name": segment_name,
+                        "post_id": post.get("id"),
+                    },
+                )
+                warnings.append(warning)
             else:
-                warnings.append("Gemini returned unexpected Reddit analysis structure.")
+                post["ai_analysis"] = analysis.model_dump()
         except (GeminiClientError, FileNotFoundError) as exc:
             warning = f"Gemini Reddit analysis failed for post '{post.get('id')}': {exc}"
             logger.error(

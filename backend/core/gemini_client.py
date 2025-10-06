@@ -104,6 +104,7 @@ class GeminiClient:
         temperature: float = 0.3,
         max_output_tokens: int = 2048,
         system_prompt: Optional[str] = None,
+        response_schema: Optional[Dict[str, Any]] = None,
     ) -> GeminiJsonResponse:
         """Render a prompt template and request a JSON response from Gemini."""
 
@@ -127,15 +128,29 @@ class GeminiClient:
         else:
             contents = prompt
 
+        config_kwargs: Dict[str, Any] = {
+            "temperature": temperature,
+            "max_output_tokens": max_output_tokens,
+            "response_mime_type": "application/json",
+        }
+
+        if response_schema is not None:
+            schema_config: Any = response_schema
+            if isinstance(response_schema, dict) and hasattr(types, "Schema"):
+                try:
+                    schema_config = types.Schema(response_schema)
+                except TypeError:
+                    try:
+                        schema_config = types.Schema.from_dict(response_schema)  # type: ignore[attr-defined]
+                    except Exception:
+                        schema_config = response_schema
+            config_kwargs["response_schema"] = schema_config
+
         try:
             response = self._get_client().models.generate_content(
                 model=model or self.default_model,
                 contents=contents,
-                config=types.GenerateContentConfig(
-                    temperature=temperature,
-                    max_output_tokens=max_output_tokens,
-                    response_mime_type="application/json",
-                ),
+                config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as exc:  # noqa: BLE001 - surface API issues with context
             raise GeminiClientError(f"Gemini API error: {exc}") from exc
