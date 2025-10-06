@@ -9,10 +9,10 @@ analyze_bp = Blueprint('analyze', __name__)
 @analyze_bp.route('/analyze', methods=['POST'])
 def analyze_content():
     """Analyze content with Gemini AI"""
-    data = request.get_json()
+    data = request.get_json() or {}
     content = data.get('content')
     custom_prompt = data.get('prompt')
-    
+
     if not content:
         return jsonify({'error': 'Content is required'}), 400
     
