@@ -14,7 +14,7 @@ SNIPPET:
 Return ONLY a JSON object with these keys:
 {{
   "post_id": "{post_id}",
-  "score": number between 0 and 1 reflecting how relevant the post is for {segment_name},
+  "score": number between 0 and 10 reflecting how relevant the post is for {segment_name} (0 = completely irrelevant, 10 = highly relevant),
   "priority": boolean indicating if this post should be fast-tracked for enrichment,
   "reason": "One short sentence describing why the post is or is not valuable"
 }}
@@ -22,3 +22,4 @@ Return ONLY a JSON object with these keys:
 STRICT REQUIREMENTS:
 - Do not include any additional fields or text.
 - If information is insufficient, still return a valid object with score 0.0 and priority false.
+- Use the full 0-10 scale: 0-3 = low relevance, 4-6 = moderate relevance, 7-10 = high relevance.

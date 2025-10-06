@@ -392,12 +392,13 @@ class RedditDataCollector:
     ) -> Tuple[Dict[str, Any], List[str]]:
         headers = {"x-api-key": self.api_key}
         warnings: List[str] = []
-        logger.debug(
-            "Enriching Reddit post",
+        logger.info(
+            "Starting post enrichment",
             extra={
                 "operation": "reddit_enrich",
                 "segment_name": segment_name,
                 "post_id": post.get("id"),
+                "post_title": post.get("title", "")[:100],
             },
         )
 
@@ -413,12 +414,13 @@ class RedditDataCollector:
                 )
                 response.raise_for_status()
                 comments_payload = response.json() if response.content else {}
-                logger.debug(
-                    "Comments fetched",
+                logger.info(
+                    "Comments fetched successfully",
                     extra={
                         "operation": "reddit_enrich",
                         "segment_name": segment_name,
                         "post_id": post.get("id"),
+                        "comment_count": len(self._extract_comment_bodies(comments_payload)),
                         "duration_ms": round((time.perf_counter() - start_time) * 1000, 2),
                     },
                 )
@@ -452,13 +454,14 @@ class RedditDataCollector:
                 "max_output_tokens": 2048,
                 "response_schema": deepcopy(REDDIT_ANALYSIS_RESPONSE_SCHEMA),
             }
-            logger.debug(
-                "Gemini Reddit analysis request payload",
+            logger.info(
+                "Sending deep analysis request to Gemini",
                 extra={
                     "operation": "reddit_enrich",
                     "segment_name": segment_name,
                     "post_id": post.get("id"),
-                    "request_payload": gemini_request_payload,
+                    "discussion_length": len(discussion_text),
+                    "model": self.advanced_model,
                 },
             )
             response = self.gemini.generate_json_response(
@@ -470,17 +473,30 @@ class RedditDataCollector:
                 response_schema=REDDIT_ANALYSIS_RESPONSE_SCHEMA,
             )
             raw_response_snippet = response.raw_text[:500]
-            logger.debug(
-                "Raw Gemini Reddit analysis response",
+            logger.info(
+                "Deep analysis response received",
                 extra={
                     "operation": "reddit_enrich",
                     "segment_name": segment_name,
                     "post_id": post.get("id"),
                     "raw_response": raw_response_snippet,
+                    "full_raw_response": response.raw_text,
+                    "response_length": len(response.raw_text),
                 },
             )
             try:
                 analysis = RedditAnalysis(**response.data)
+                logger.info(
+                    "Deep analysis successful",
+                    extra={
+                        "operation": "reddit_enrich",
+                        "segment_name": segment_name,
+                        "post_id": post.get("id"),
+                        "relevance_score": analysis.relevance_score,
+                        "solution_angle": analysis.outstaffer_solution_angle,
+                        "pain_point": analysis.identified_pain_point[:200],
+                    },
+                )
             except ValidationError as exc:
                 warning = (
                     f"Gemini Reddit analysis validation failed for post '{post.get('id')}': {exc}"

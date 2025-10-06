@@ -36,9 +36,9 @@ const PostCard = ({ post, showAnalysis }) => (
                     )}
                 </Box>
             )}
-            {post.url && (
+            {post.permalink && (
                 <Typography variant="body2" sx={{ mt: 1 }}>
-                    <Link href={post.url} target="_blank" rel="noreferrer">
+                    <Link href={`https://reddit.com${post.permalink}`} target="_blank" rel="noreferrer">
                         View discussion
                     </Link>
                 </Typography>

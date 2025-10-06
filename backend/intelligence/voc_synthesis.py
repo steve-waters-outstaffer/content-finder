@@ -95,15 +95,6 @@ def pre_score_post(
         "subreddit": stripped_post.get("subreddit", ""),
     }
 
-    logger.debug(
-        "Submitting pre-score request",
-        extra={
-            "operation": "pre_score_post",
-            "segment_name": segment_name,
-            "post_id": stripped_post.get("id", ""),
-        },
-    )
-
     request_payload = {
         "template_name": "voc_reddit_prescore_prompt.txt",
         "context": context,
@@ -112,13 +103,18 @@ def pre_score_post(
         "max_output_tokens": 2048,
         "response_schema": deepcopy(PRESCORE_RESPONSE_SCHEMA),
     }
-    logger.debug(
-        "Gemini pre-score request payload",
+    logger.info(
+        "Gemini pre-score request",
         extra={
             "operation": "pre_score_post",
             "segment_name": segment_name,
             "post_id": stripped_post.get("id", ""),
-            "request_payload": request_payload,
+            "post_title": stripped_post.get("title", "")[:100],
+            "post_snippet": stripped_post.get("content", "")[:200],
+            "model": gemini_client.default_model,
+            "prompt_context": context,
+            "audience": segment_config.get("audience", ""),
+            "priorities": segment_config.get("priorities", []),
         },
     )
 
@@ -131,23 +127,54 @@ def pre_score_post(
             max_output_tokens=2048,
             response_schema=PRESCORE_RESPONSE_SCHEMA,
         )
+        
+        # Log the actual prompt that was sent (load template and render it)
+        try:
+            prompt_template = gemini_client._load_prompt("voc_reddit_prescore_prompt.txt")
+            rendered_prompt = prompt_template.format(**context)
+            logger.info(
+                "Rendered prompt sent to Gemini",
+                extra={
+                    "operation": "pre_score_post",
+                    "segment_name": segment_name,
+                    "post_id": stripped_post.get("id", ""),
+                    "rendered_prompt": rendered_prompt[:1000],  # First 1000 chars
+                    "prompt_length": len(rendered_prompt),
+                },
+            )
+        except Exception as prompt_log_exc:
+            # Don't fail scoring if we can't log the prompt
+            logger.debug(f"Could not log rendered prompt: {prompt_log_exc}")
+            
     except GeminiClientError:
         raise
     except Exception as exc:  # noqa: BLE001 - surface unexpected errors consistently
         raise GeminiClientError(f"Gemini pre-score request failed: {exc}") from exc
 
-    logger.debug(
-        "Raw Gemini pre-score response",
+    logger.info(
+        "Gemini pre-score response received",
         extra={
             "operation": "pre_score_post",
             "segment_name": segment_name,
             "post_id": stripped_post.get("id", ""),
             "raw_response": response.raw_text[:500],
+            "response_length": len(response.raw_text),
+            "full_raw_response": response.raw_text,  # Include full response for debugging
+            "expected_schema": PRESCORE_RESPONSE_SCHEMA,
         },
     )
 
     try:
         result = PreScoreResult(**response.data)
+        logger.info(
+            "Response parsed successfully",
+            extra={
+                "operation": "pre_score_post",
+                "segment_name": segment_name,
+                "post_id": stripped_post.get("id", ""),
+                "parsed_data": response.data,
+            },
+        )
     except ValidationError as exc:  # noqa: BLE001 - validation errors should bubble up
         logger.warning(
             "Pre-score validation failed",
@@ -157,6 +184,9 @@ def pre_score_post(
                 "post_id": stripped_post.get("id", ""),
                 "error": str(exc),
                 "raw_response": response.raw_text[:500],
+                "full_raw_response": response.raw_text,
+                "response_data": response.data,
+                "expected_schema": PRESCORE_RESPONSE_SCHEMA,
             },
         )
         raise GeminiClientError("Pre-score validation failed") from exc
@@ -173,7 +203,7 @@ def pre_score_post(
         )
         raise
 
-    logger.debug(
+    logger.info(
         "Pre-score successful",
         extra={
             "operation": "pre_score_post",
@@ -181,6 +211,7 @@ def pre_score_post(
             "post_id": result.post_id,
             "score": result.score,
             "priority": result.priority,
+            "reason": result.reason[:200] if result.reason else "",
         },
     )
     return result
@@ -204,6 +235,16 @@ def pre_score_posts(
 
     start_time = time.perf_counter()
     scored_posts: List[Dict[str, Any]] = []
+    
+    logger.info(
+        "Starting parallel pre-score",
+        extra={
+            "operation": "pre_score",
+            "segment_name": segment_name,
+            "post_count": len(posts),
+            "max_workers": max_workers,
+        },
+    )
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_map = {
@@ -230,9 +271,11 @@ def pre_score_posts(
                 logger.warning(
                     warning,
                     extra={
-                        "operation": "pre_score_post",
+                        "operation": "pre_score",
                         "segment_name": segment_name,
                         "post_id": post_id,
+                        "error_type": "GeminiClientError",
+                        "error": str(exc),
                     },
                 )
                 warnings.append(warning)
@@ -244,9 +287,10 @@ def pre_score_posts(
                 logger.exception(
                     warning,
                     extra={
-                        "operation": "pre_score_post",
+                        "operation": "pre_score",
                         "segment_name": segment_name,
                         "post_id": post_id,
+                        "error_type": type(exc).__name__,
                     },
                 )
                 warnings.append(warning)
@@ -260,19 +304,43 @@ def pre_score_posts(
             }
             enriched_post["_prescore_index"] = index
             scored_posts.append(enriched_post)
+            
+            # Log each successful score as it completes
+            logger.info(
+                "Post scored",
+                extra={
+                    "operation": "pre_score",
+                    "segment_name": segment_name,
+                    "post_id": post_id,
+                    "score": prescore_result.score,
+                    "priority": prescore_result.priority,
+                    "progress": f"{len(scored_posts)}/{len(posts)}",
+                },
+            )
 
     scored_posts.sort(key=lambda item: item.get("_prescore_index", 0))
     for post in scored_posts:
         post.pop("_prescore_index", None)
 
     duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+    
+    # Calculate score distribution for visibility
+    scores = [p.get("prescore", {}).get("relevance_score", 0) for p in scored_posts]
+    score_distribution = {
+        "min": min(scores) if scores else 0,
+        "max": max(scores) if scores else 0,
+        "avg": round(sum(scores) / len(scores), 2) if scores else 0,
+    }
+    
     logger.info(
         "Pre-score complete",
         extra={
             "operation": "pre_score",
             "segment_name": segment_name,
-            "count": len(scored_posts),
-            "failures": len(warnings),
+            "input_count": len(posts),
+            "scored_count": len(scored_posts),
+            "failed_count": len(warnings),
+            "score_distribution": score_distribution,
             "duration_ms": duration_ms,
         },
     )

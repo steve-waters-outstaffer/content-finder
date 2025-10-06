@@ -101,7 +101,7 @@ def run_voc_discovery(
     )
 
     fetch_start = time.perf_counter()
-    reddit_posts, reddit_warnings = collector.fetch_posts(
+    reddit_posts, raw_unfiltered_posts, reddit_warnings = collector.fetch_posts(
         segment_name=segment_name,
         segment_config=config,
         log_callback=log,

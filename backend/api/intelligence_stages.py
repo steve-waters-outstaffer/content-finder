@@ -222,17 +222,69 @@ def enrich_posts():
             history_store=history_store,
         )
         
-        # Deep enrichment with comments
+        # Deep enrichment with comments - PARALLEL execution
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        
         enriched_posts = []
         warnings = []
-        for post in promising_posts:
-            enriched_post, post_warnings = collector.enrich_post(
-                post,
-                segment_name=segment_name,
-                segment_config=config,
-            )
-            enriched_posts.append(enriched_post)
-            warnings.extend(post_warnings)
+        max_workers = 5  # Same as pre-score for consistency
+        
+        logger.info(
+            "Starting parallel enrichment",
+            extra={
+                "operation": "enrich_stage",
+                "segment_name": segment_name,
+                "post_count": len(promising_posts),
+                "max_workers": max_workers,
+            },
+        )
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_map = {
+                executor.submit(
+                    collector.enrich_post,
+                    post,
+                    segment_name=segment_name,
+                    segment_config=config,
+                ): (index, post)
+                for index, post in enumerate(promising_posts)
+            }
+            
+            for future in as_completed(future_map):
+                index, original_post = future_map[future]
+                post_id = original_post.get("id") or ""
+                
+                try:
+                    enriched_post, post_warnings = future.result()
+                    enriched_post["_enrich_index"] = index
+                    enriched_posts.append(enriched_post)
+                    warnings.extend(post_warnings)
+                    
+                    logger.info(
+                        "Post enriched",
+                        extra={
+                            "operation": "enrich_stage",
+                            "segment_name": segment_name,
+                            "post_id": post_id,
+                            "progress": f"{len(enriched_posts)}/{len(promising_posts)}",
+                        },
+                    )
+                except Exception as exc:
+                    warning = f"Enrichment failed for post '{post_id}': {exc}"
+                    logger.exception(
+                        warning,
+                        extra={
+                            "operation": "enrich_stage",
+                            "segment_name": segment_name,
+                            "post_id": post_id,
+                        },
+                    )
+                    warnings.append(warning)
+        
+        # Sort by original order
+        enriched_posts.sort(key=lambda item: item.get("_enrich_index", 0))
+        for post in enriched_posts:
+            post.pop("_enrich_index", None)
 
         # Final filter based on deep AI analysis
         final_threshold = config.get('ai_relevance_threshold', 6.0)
@@ -240,6 +292,18 @@ def enrich_posts():
             enriched_posts,
             min_score=final_threshold,
         )
+        
+        # Calculate enrichment score distribution
+        scores = [
+            p.get("ai_analysis", {}).get("relevance_score", 0) 
+            for p in enriched_posts 
+            if p.get("ai_analysis")
+        ]
+        score_distribution = {
+            "min": min(scores) if scores else 0,
+            "max": max(scores) if scores else 0,
+            "avg": round(sum(scores) / len(scores), 2) if scores else 0,
+        }
 
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
         logger.info(
@@ -247,8 +311,11 @@ def enrich_posts():
             extra={
                 "operation": "enrich_stage",
                 "segment_name": segment_name,
+                "input_count": len(promising_posts),
                 "enriched_count": len(enriched_posts),
                 "filtered_count": len(filtered_posts),
+                "rejected_count": len(rejected_posts),
+                "score_distribution": score_distribution,
                 "threshold": final_threshold,
                 "duration_ms": duration_ms,
             },
