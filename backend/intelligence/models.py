@@ -107,6 +107,50 @@ class QueryPlan(BaseModel):
     )
 
 
+class ArticleAnalysis(BaseModel):
+    """Structured single-article analysis returned by Gemini."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overview: str = Field(
+        ...,
+        description="A concise 2-3 sentence executive summary of the article.",
+    )
+    key_insights: List[str] = Field(
+        ...,
+        description="A list of 3-6 short bullet insights derived from the article.",
+        min_length=1,
+    )
+    outstaffer_opportunity: str = Field(
+        ...,
+        description="Specific ways Outstaffer can leverage this article's information.",
+    )
+
+
+class MultiArticleAnalysis(BaseModel):
+    """Structured synthesis across multiple articles returned by Gemini."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    overview: str = Field(
+        ...,
+        description="A 3-5 sentence overview synthesising the combined sources.",
+    )
+    key_insights: List[str] = Field(
+        ...,
+        description="A list of 5-10 cross-article insights expressed as short bullets.",
+        min_length=1,
+    )
+    outstaffer_opportunity: str = Field(
+        ...,
+        description="Practical strategies for Outstaffer derived from the combined sources.",
+    )
+    cross_article_themes: List[str] = Field(
+        default_factory=list,
+        description="Recurring themes identified across the analysed articles.",
+    )
+
+
 class TalkingPoint(BaseModel):
     """Insight derived from the research corpus."""
 

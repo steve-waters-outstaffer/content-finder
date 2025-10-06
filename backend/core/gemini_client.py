@@ -14,6 +14,8 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+from intelligence.models import ArticleAnalysis
+
 
 class GeminiClientError(RuntimeError):
     """Raised when the Gemini API cannot return a usable response."""
@@ -347,38 +349,24 @@ class GeminiClient:
             **response.data,
         }
 
-    def analyze_content(
+    def analyze_article_structured(
         self,
         content: str,
-        prompt: Optional[str] = None,
         *,
         model: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Analyze a block of content with an optional custom prompt."""
+    ) -> ArticleAnalysis:
+        """Analyze a single scraped article and return structured insights."""
 
-        analysis_prompt = prompt or (
-            "Analyze this scraped web content and provide:\n\n"
-            "1. Executive summary (2-3 sentences).\n"
-            "2. Key insights (3-5 bullets).\n"
-            "3. Outstaffer relevance (paragraph).\n"
-            "4. Content angle ideas (3 suggestions).\n"
-            "5. Action items (2-3 points).\n\n"
-            "CONTENT TO ANALYSE:\n{content}"
-        )
+        context = {"content": content}
 
-        rendered_prompt = analysis_prompt.format(content=content)
-
-        generated = self.generate_text(
-            prompt=rendered_prompt,
+        return self.generate_structured_response(
+            "article_analysis_prompt.txt",
+            context,
+            response_model=ArticleAnalysis,
             model=model,
-            temperature=0.7,
+            temperature=0.4,
             max_output_tokens=2048,
         )
-
-        return {
-            "success": bool(generated),
-            "analysis": generated,
-        }
 
 
 __all__ = ["GeminiClient", "GeminiClientError", "GeminiJsonResponse"]
