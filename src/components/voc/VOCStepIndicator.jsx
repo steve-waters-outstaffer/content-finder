@@ -27,7 +27,7 @@ const VOCStepIndicator = ({ steps, currentStep, stepData, canProceedToStep, onSt
             color="text.secondary"
             sx={{ mb: 2, textTransform: 'uppercase', letterSpacing: 0.5, fontSize: 11 }}
         >
-            VOC Discovery Pipeline
+            Social Listening Steps
         </Typography>
         <List sx={{ p: 0 }}>
             {steps.map((step, index) => {

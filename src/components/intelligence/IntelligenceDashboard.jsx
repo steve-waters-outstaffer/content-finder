@@ -43,11 +43,11 @@ const IntelligenceDashboard = () => {
         const data = await response.json();
         setConfig(data);
       } else {
-        setError('Failed to load intelligence configuration');
+        setError('Failed to load audience research configuration');
       }
     } catch (error) {
       console.error('Failed to load config:', error);
-      setError('Failed to connect to intelligence API');
+      setError('Failed to connect to audience intelligence API');
     } finally {
       setLoading(false);
     }
@@ -109,7 +109,7 @@ const IntelligenceDashboard = () => {
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box>
             <Typography variant="h5" component="h1" fontWeight={FontWeight.Bold}>
-              Intelligence Engine
+              Audience Intelligence
             </Typography>
             <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} sx={{ mt: 1 }}>
               <Link

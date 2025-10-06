@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional, Type
 
-import instructor
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
@@ -47,7 +46,7 @@ class GeminiClient:
             / "prompts"
         )
         self._client: Optional[genai.Client] = None
-        self._structured_models: Dict[str, genai.GenerativeModel] = {}
+        self._structured_models: Dict[str, Any] = {}
 
     # ---------------------------------------------------------------------
     # Core helpers
@@ -60,16 +59,14 @@ class GeminiClient:
             self._client = genai.Client(api_key=self.api_key)
         return self._client
 
-    def _get_structured_model(self, model_name: str) -> genai.GenerativeModel:
-        """Return a patched generative model for structured responses."""
-
-        if model_name not in self._structured_models:
-            generative_model = genai.GenerativeModel(
-                model_name=model_name,
-                client=self._get_client(),
-            )
-            self._structured_models[model_name] = instructor.patch(generative_model)
-        return self._structured_models[model_name]
+    def _get_structured_model(self, model_name: str) -> Any:
+        """Return a model handle for structured responses.
+        
+        Note: This is now a no-op since we handle structured responses
+        directly in generate_structured_response using response_schema.
+        """
+        # Not actually used anymore, but kept for backwards compatibility
+        return None
 
     def _load_prompt(self, template_name: str) -> str:
         template_path = self.prompt_dir / template_name
@@ -205,26 +202,41 @@ class GeminiClient:
         else:
             contents = prompt
 
+        # Get the JSON schema and convert it to the format Gemini expects
+        json_schema = response_model.model_json_schema()
+        
+        # The new SDK requires wrapping the schema properly
+        # See: https://ai.google.dev/gemini-api/docs/json-mode
+        try:
+            response_schema = types.Schema.from_dict(json_schema)
+        except Exception:
+            # Fallback: try using the schema directly
+            response_schema = json_schema
+
         generation_config = types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
+            response_mime_type="application/json",
+            response_schema=response_schema,
         )
 
-        patched_model = self._get_structured_model(model or self.default_model)
-
         try:
-            response = patched_model.generate_content(
-                contents,
-                generation_config=generation_config,
-                response_model=response_model,
+            response = self._get_client().models.generate_content(
+                model=model or self.default_model,
+                contents=contents,
+                config=generation_config,
             )
         except Exception as exc:  # noqa: BLE001
             raise GeminiClientError(f"Gemini API error: {exc}") from exc
 
-        if isinstance(response, BaseModel):
-            return response
-
-        raise GeminiClientError("Gemini returned an unexpected response type for structured output.")
+        # Parse the JSON response into the Pydantic model
+        try:
+            parsed_data = json.loads(response.text or "{}")
+            return response_model.model_validate(parsed_data)
+        except (json.JSONDecodeError, Exception) as exc:
+            raise GeminiClientError(
+                f"Failed to parse structured response: {exc}\nRaw response: {response.text}"
+            ) from exc
 
     def generate_text(
         self,

@@ -452,9 +452,10 @@ def generate_queries():
 
         # Generate queries
         curated_queries = generate_curated_queries(
-            filtered_posts=filtered_posts,
+            analyzed_posts=filtered_posts,
             trends_data=trends,
             segment_config=config,
+            segment_name=segment_name,
             gemini_client=gemini_client,
         )
 

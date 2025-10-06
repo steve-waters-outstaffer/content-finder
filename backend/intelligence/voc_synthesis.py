@@ -10,14 +10,20 @@ from copy import deepcopy
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from pydantic import BaseModel, Field, ValidationError
+
 from core.gemini_client import GeminiClient, GeminiClientError
 from intelligence.models import (
     PRESCORE_RESPONSE_SCHEMA,
     PreScoreResult,
 )
-from pydantic import ValidationError
 
 logger = logging.getLogger(__name__)
+
+
+class CuratedQueriesResponse(BaseModel):
+    """Pydantic model for curated query generation response"""
+    queries: List[str] = Field(description="List of curated search queries")
 
 
 def clean_text_for_json(text: str, max_length: int = 1500) -> str:
@@ -646,10 +652,22 @@ def generate_curated_queries(
     segment_name: str,
     gemini_client: GeminiClient,
 ) -> Tuple[List[str], List[str]]:
+    logger.info(
+        "Starting curated query generation",
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+            "posts_count": len(analyzed_posts),
+            "trends_count": len(trends_data),
+        }
+    )
+    
+    # Build pain point lines
     pain_point_lines: List[str] = []
-    for post in analyzed_posts:
+    for idx, post in enumerate(analyzed_posts):
         ai_analysis = post.get("ai_analysis") or {}
         if not isinstance(ai_analysis, dict):
+            logger.debug(f"Post {idx}: No valid ai_analysis, skipping")
             continue
         pain_point = ai_analysis.get("identified_pain_point") or "(pain point unavailable)"
         relevance = ai_analysis.get("relevance_score")
@@ -662,6 +680,16 @@ def generate_curated_queries(
         else:
             pain_point_lines.append(f"- {pain_point} — r/{subreddit} | {title}")
 
+    logger.info(
+        "Extracted pain points from posts",
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+            "pain_point_count": len(pain_point_lines),
+        }
+    )
+
+    # Build trends lines
     trends_lines: List[str] = []
     for trend in trends_data:
         query = trend.get("query")
@@ -679,8 +707,23 @@ def generate_curated_queries(
         else:
             trends_lines.append(f"- {query}: steady interest over time")
 
+    logger.info(
+        "Extracted trend summaries",
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+            "trends_summary_count": len(trends_lines),
+        }
+    )
+
     if not pain_point_lines and not trends_lines:
-        logger.info("Skipping curated query generation - no meaningful data available")
+        logger.warning(
+            "No meaningful data available for query generation",
+            extra={
+                "operation": "query_generation",
+                "segment_name": segment_name,
+            }
+        )
         return [], []
 
     pain_points = "\n".join(pain_point_lines) if pain_point_lines else "- No AI-analyzed Reddit posts were available."
@@ -693,6 +736,17 @@ def generate_curated_queries(
         "trends_summary": trends_summary,
     }
 
+    logger.info(
+        "Calling Gemini for query generation",
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+            "audience_length": len(prompt_context["audience"]),
+            "pain_points_length": len(pain_points),
+            "trends_summary_length": len(trends_summary),
+        }
+    )
+
     try:
         start_time = time.perf_counter()
         response = gemini_client.generate_json_response(
@@ -702,22 +756,73 @@ def generate_curated_queries(
             max_output_tokens=1024,
         )
         duration_ms = round((time.perf_counter() - start_time) * 1000, 2)
+        
+        logger.info(
+            "Gemini response received",
+            extra={
+                "operation": "query_generation",
+                "segment_name": segment_name,
+                "duration_ms": duration_ms,
+                "response_type": type(response.data).__name__,
+            }
+        )
     except (GeminiClientError, FileNotFoundError) as exc:
         warning = f"Gemini curated query generation failed: {exc}"
-        logger.warning(
+        logger.error(
             warning,
             extra={
                 "operation": "query_generation",
                 "segment_name": segment_name,
+                "error": str(exc),
+                "error_type": type(exc).__name__,
             },
+            exc_info=True,
         )
         return [], [warning]
 
     data = response.data
+    
+    # Log the actual response for debugging
+    logger.debug(
+        "Raw Gemini response data",
+        extra={
+            "operation": "query_generation",
+            "segment_name": segment_name,
+            "data_type": type(data).__name__,
+            "data_repr": repr(data)[:500],  # First 500 chars
+        }
+    )
+    
+    # Try to parse as Pydantic model first
+    if isinstance(data, dict):
+        try:
+            validated_response = CuratedQueriesResponse(**data)
+            cleaned = [str(item).strip() for item in validated_response.queries if str(item).strip()]
+            logger.info(
+                "Curated queries generated (via Pydantic validation)",
+                extra={
+                    "operation": "query_generation",
+                    "segment_name": segment_name,
+                    "count": len(cleaned),
+                    "duration_ms": duration_ms,
+                },
+            )
+            return cleaned, []
+        except ValidationError as e:
+            logger.warning(
+                "Failed to validate response with Pydantic",
+                extra={
+                    "operation": "query_generation",
+                    "segment_name": segment_name,
+                    "validation_error": str(e),
+                }
+            )
+    
+    # Fallback: Try direct list parsing
     if isinstance(data, list):
         cleaned = [str(item).strip() for item in data if str(item).strip()]
         logger.info(
-            "Curated queries generated",
+            "Curated queries generated (direct list)",
             extra={
                 "operation": "query_generation",
                 "segment_name": segment_name,
@@ -726,10 +831,12 @@ def generate_curated_queries(
             },
         )
         return cleaned, []
+    
+    # Fallback: Try dict with queries key
     if isinstance(data, dict) and isinstance(data.get("queries"), list):
         cleaned = [str(item).strip() for item in data["queries"] if str(item).strip()]
         logger.info(
-            "Curated queries generated",
+            "Curated queries generated (dict.queries)",
             extra={
                 "operation": "query_generation",
                 "segment_name": segment_name,
@@ -739,12 +846,13 @@ def generate_curated_queries(
         )
         return cleaned, []
 
-    warning = "Gemini returned unexpected structure for curated queries generation."
+    warning = f"Gemini returned unexpected structure: {type(data).__name__} - {repr(data)[:200]}"
     logger.warning(
         warning,
         extra={
             "operation": "query_generation",
             "segment_name": segment_name,
+            "data_type": type(data).__name__,
         },
     )
     return [], [warning]

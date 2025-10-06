@@ -528,10 +528,10 @@ const ContentFinder = () => {
             <Card sx={{ mb: 3 }}>
                 <CardContent>
                     <Typography variant="h5" gutterBottom fontWeight={FontWeight.SemiBold}>
-                        Content Pipeline
+                        Quick Research Tool
                     </Typography>
                     <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-                        Search, scrape, and analyze content for recruitment and EOR industry insights.
+                        Search any topic, scrape and analyze multiple sources, then synthesize findings into strategic content briefs.
                     </Typography>
                     <Box sx={{ display: 'flex', gap: 2, mb: 2, mt: 2 }}>
                         <TextField
@@ -608,7 +608,7 @@ const ContentFinder = () => {
                     <Paper elevation={0} sx={{ p: 2, mb: 3, bgcolor: CustomColors.AliceBlue }}>
                         <Typography variant="h6" gutterBottom>
                             <TrendingUpIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-                            Pipeline Results Summary
+                            Research Results Summary
                         </Typography>
                         <Stack direction="row" spacing={3}>
                             <Box>
@@ -621,13 +621,13 @@ const ContentFinder = () => {
                                 <Typography variant="h4" color="success.main" fontWeight={FontWeight.Bold}>
                                     {Object.values(processedResults).filter(data => data.scrape?.success && !data.error).length}
                                 </Typography>
-                                <Typography variant="caption">Individually Scraped</Typography>
+                                <Typography variant="caption">Sources Analyzed</Typography>
                             </Box>
                             <Box>
                                 <Typography variant="h4" color="secondary.main" fontWeight={FontWeight.Bold}>
                                     {synthesisResult ? 1 : 0}
                                 </Typography>
-                                <Typography variant="caption">Synthesized Articles</Typography>
+                                <Typography variant="caption">Content Briefs Generated</Typography>
                             </Box>
                         </Stack>
                     </Paper>

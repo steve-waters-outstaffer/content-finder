@@ -139,7 +139,7 @@ const SessionWorkflow = ({ segment, onComplete }) => {
             <Box sx={{textAlign: 'center'}}>
               <PsychologyIcon sx={{ fontSize: 48, color: CustomColors.DeepSkyBlue, mb: 2 }} />
               <Typography variant="h6" mb={1}>
-                Start Intelligence Research
+                Start Audience Research
               </Typography>
               <Typography variant="body2" color="text.secondary" mb={2}>
                 Create a new research session for <strong>{segment.name}</strong>
@@ -196,7 +196,7 @@ const SessionWorkflow = ({ segment, onComplete }) => {
         <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
           <Box>
             <Typography variant="h5" fontWeight={FontWeight.Bold}>
-              Intelligence Research: {segment.name}
+              Audience Research: {segment.name}
             </Typography>
             <Typography variant="body2" color="text.secondary">
               Session: {sessionId?.slice(-8)}
