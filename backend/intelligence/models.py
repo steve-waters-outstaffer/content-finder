@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -61,21 +62,48 @@ REDDIT_ANALYSIS_RESPONSE_SCHEMA = {
 }
 
 
-class SearchQuery(BaseModel):
+class QuerySource(str, Enum):
+    """Enumerated sources where queries should be executed."""
+
+    WEB = "web"
+    INTERNAL = "internal"
+    BOTH = "both"
+
+
+class QueryPlanQuery(BaseModel):
     """A precise, actionable web search query tailored to the research mission."""
+
+    model_config = ConfigDict(extra="forbid")
 
     query: str = Field(
         ...,
         description="A precise, actionable web search query tailored to the research mission.",
+    )
+    source: QuerySource = Field(
+        ...,
+        description="The primary system where this query should be executed.",
+    )
+    qdf: int = Field(
+        ..., ge=0, le=5, description="Query Deserves Freshness score from 0 (stale) to 5 (urgent)."
+    )
+    rationale: Optional[str] = Field(
+        default=None,
+        description="Optional 1-2 sentence rationale explaining the value of this query.",
     )
 
 
 class QueryPlan(BaseModel):
     """Structured set of search queries returned by the planner."""
 
-    queries: List[SearchQuery] = Field(
+    model_config = ConfigDict(extra="forbid")
+
+    queries: List[QueryPlanQuery] = Field(
         ...,
-        description="A list of 3-5 high-quality, targeted search queries.",
+        description="A list of 3-8 high-quality, targeted search queries.",
+    )
+    notes: Optional[str] = Field(
+        default=None,
+        description="Optional global planning notes for downstream steps.",
     )
 
 
