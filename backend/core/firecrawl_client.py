@@ -1,3 +1,4 @@
+# backend/core/firecrawl_client.py
 """Typed Firecrawl client wrappers for synchronous and async workflows."""
 
 from __future__ import annotations
@@ -6,8 +7,12 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional
+import logging
+import time
 
 from firecrawl import AsyncFirecrawl, Firecrawl
+
+logger = logging.getLogger(__name__)
 
 
 class FirecrawlClientError(RuntimeError):
@@ -102,6 +107,8 @@ class FirecrawlClient:
     def scrape_urls(self, urls: Iterable[str]) -> List[Dict[str, Any]]:
         results: List[Dict[str, Any]] = []
         for url in urls:
+            start_time = time.perf_counter()
+            logger.info(f"SCRAPE_URL: Starting scrape for {url}")
             try:
                 doc = self._client.scrape(url, formats=["markdown", "html"])
                 document = WebDocument.from_payload(doc)
@@ -115,7 +122,11 @@ class FirecrawlClient:
                         description=document.description,
                     ).to_dict()
                 )
+                duration = time.perf_counter() - start_time
+                logger.info(f"SCRAPE_URL: Finished scrape for {url} in {duration:.2f}s")
             except Exception as exc:  # noqa: BLE001 - continue processing remaining URLs
+                duration = time.perf_counter() - start_time
+                logger.error(f"SCRAPE_URL: Failed to scrape {url} in {duration:.2f}s. Error: {exc}")
                 results.append(
                     ScrapeResult(
                         url=url,
@@ -160,10 +171,10 @@ class AsyncFirecrawlClient:
         self._client = AsyncFirecrawl(api_key=self.api_key)
 
     async def scrape(
-        self,
-        url: str,
-        *,
-        only_main_content: bool = True,
+            self,
+            url: str,
+            *,
+            only_main_content: bool = True,
     ) -> ScrapeResult:
         try:
             response = await self._client.scrape(
@@ -191,4 +202,3 @@ __all__ = [
     "ScrapeResult",
     "WebDocument",
 ]
-

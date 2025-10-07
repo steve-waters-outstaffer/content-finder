@@ -1,3 +1,4 @@
+# backend/api/intelligence.py
 """Simple Intelligence API using Agent-Based Research"""
 import asyncio
 import json
@@ -157,9 +158,9 @@ def get_segment_config(segment_name: str):
     if not trends_keywords:
         google_trends = config.get('google_trends') or {}
         trends_keywords = (
-            google_trends.get('primary_keywords')
-            or config.get('search_keywords')
-            or []
+                google_trends.get('primary_keywords')
+                or config.get('search_keywords')
+                or []
         )
 
     return jsonify(
@@ -192,7 +193,7 @@ def voc_discovery():
             key: value
             for key, value in payload.items()
             if key in {"google_trends", "trends_keywords", "subreddits"}
-            and value  # Only include if value is truthy (not empty list/dict)
+               and value  # Only include if value is truthy (not empty list/dict)
         }
         logger.debug(f"Raw payload received: {payload}", extra={"operation": "voc_discovery_request", "segment_name": segment_name})
         logger.debug(
@@ -732,7 +733,8 @@ def analyze_sources(session_id):
             return jsonify({'error': 'No sources selected for analysis'}), 400
 
         logger.info(
-            "Scraping sources for analysis",
+            "ANALYSIS: Scraping %s sources for analysis",
+            len(selected_sources),
             extra={
                 "operation": "session_analyze",
                 "session_id": session_id,
@@ -753,7 +755,9 @@ def analyze_sources(session_id):
         successful_scrapes = [doc for doc in scraped_docs if doc.get('passages')]
         scraped_count = len(successful_scrapes)
         logger.info(
-            "Scraping completed",
+            "ANALYSIS: Scraping completed. %s/%s successful.",
+            scraped_count,
+            len(selected_sources),
             extra={
                 "operation": "session_analyze",
                 "session_id": session_id,
@@ -766,15 +770,14 @@ def analyze_sources(session_id):
             raise Exception("Failed to scrape content from any of the selected sources.")
 
         logger.info(
-            "Synthesizing insights",
+            "ANALYSIS: Synthesizing insights from %s documents.",
+            scraped_count,
             extra={
                 "operation": "session_analyze",
                 "session_id": session_id,
                 "count": scraped_count,
             },
         )
-        logger.info(f"Starting synthesis for session {session_id}")
-        logger.debug(f"Number of docs to synthesize: {len(successful_scrapes)}")
 
         try:
             synthesis_result = researcher.synthesize_insights(
@@ -782,10 +785,9 @@ def analyze_sources(session_id):
                 segment_name=session['segmentName'],
                 docs=successful_scrapes
             )
-            logger.info("Synthesis completed successfully")
-            logger.debug(f"Synthesis result keys: {synthesis_result.keys()}")
+            logger.info("ANALYSIS: Synthesis completed successfully.")
         except Exception as e:  # noqa: BLE001
-            logger.error(f"Synthesis failed: {str(e)}", exc_info=True)
+            logger.error(f"ANALYSIS: Synthesis failed: {str(e)}", exc_info=True)
             raise
 
         themes = synthesis_result.get("content_themes", [])
@@ -796,7 +798,8 @@ def analyze_sources(session_id):
         session['updatedAt'] = datetime.now().isoformat()
 
         logger.info(
-            "Analysis completed",
+            "ANALYSIS: Analysis completed. Generated %s themes.",
+            len(themes),
             extra={
                 "operation": "session_analyze",
                 "session_id": session_id,
