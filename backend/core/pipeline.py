@@ -22,6 +22,12 @@ class ContentPipeline:
         firecrawl_key = firecrawl_api_key or os.environ.get('FIRECRAWL_API_KEY')
         gemini_key = gemini_api_key or os.environ.get('GEMINI_API_KEY')
 
+        if not gemini_key:
+            logger.error(
+                "missing_gemini_key",
+                extra={"operation": "pipeline_init", "env_has_key": bool(os.environ.get('GEMINI_API_KEY'))}
+            )
+
         self.firecrawl = FirecrawlClient(api_key=firecrawl_key)
         self.gemini = GeminiClient(api_key=gemini_key)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")

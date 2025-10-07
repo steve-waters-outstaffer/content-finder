@@ -208,16 +208,39 @@ class GeminiClient:
         else:
             contents = prompt
 
-        # Get the JSON schema and convert it to the format Gemini expects
+        # Get the JSON schema and clean it for Gemini compatibility
         json_schema = response_model.model_json_schema()
         
+        # Remove unsupported fields that Pydantic adds
+        def clean_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
+            """Remove fields not supported by Gemini API"""
+            cleaned = schema.copy()
+            
+            # Remove top-level unsupported fields
+            cleaned.pop("additionalProperties", None)
+            cleaned.pop("$defs", None)
+            cleaned.pop("$schema", None)
+            
+            # Recursively clean nested properties
+            if "properties" in cleaned:
+                for prop_name, prop_schema in cleaned["properties"].items():
+                    if isinstance(prop_schema, dict):
+                        cleaned["properties"][prop_name] = clean_schema_for_gemini(prop_schema)
+            
+            # Clean array items
+            if "items" in cleaned and isinstance(cleaned["items"], dict):
+                cleaned["items"] = clean_schema_for_gemini(cleaned["items"])
+                
+            return cleaned
+        
+        cleaned_schema = clean_schema_for_gemini(json_schema)
+        
         # The new SDK requires wrapping the schema properly
-        # See: https://ai.google.dev/gemini-api/docs/json-mode
         try:
-            response_schema = types.Schema.from_dict(json_schema)
+            response_schema = types.Schema.from_dict(cleaned_schema)
         except Exception:
             # Fallback: try using the schema directly
-            response_schema = json_schema
+            response_schema = cleaned_schema
 
         generation_config = types.GenerateContentConfig(
             temperature=temperature,

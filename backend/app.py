@@ -1,9 +1,12 @@
 """Main Flask application"""
 import logging
+import os
+import time
 
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, g
 from flask_cors import CORS
+from werkzeug.exceptions import HTTPException
 
 from api.search import search_bp
 from api.scrape import scrape_bp
@@ -30,6 +33,66 @@ def create_app():
     # CORS(app, origins=["http://localhost:5173", "http://127.0.0.1:5173", "https://content-finder-4bf70.web.app"])
     CORS(app, resources={r"/api/*": {"origins": ["http://localhost:5173", "http://127.0.0.1:5173", "https://content-finder-4bf70.web.app"]}}, supports_credentials=True)
     
+    # Request timing and tracing
+    @app.before_request
+    def _req_start():
+        g._start = time.time()
+        # Pull Cloud Run trace header for GCP log correlation
+        trace_header = request.headers.get("X-Cloud-Trace-Context", "")
+        g._trace = trace_header.split("/", 1)[0] if trace_header else None
+
+        logging.getLogger("request").info(
+            "request_start",
+            extra={
+                "operation": "request_start",
+                "method": request.method,
+                "path": request.path,
+                "content_length": request.content_length or 0,
+                "remote_addr": request.headers.get("X-Forwarded-For", request.remote_addr),
+                "user_agent": request.headers.get("User-Agent"),
+                "trace": g._trace,
+            },
+        )
+
+    @app.after_request
+    def _req_end(response):
+        duration_ms = int((time.time() - getattr(g, "_start", time.time())) * 1000)
+        logging.getLogger("request").info(
+            "request_end",
+            extra={
+                "operation": "request_end",
+                "method": request.method,
+                "path": request.path,
+                "status": response.status_code,
+                "duration_ms": duration_ms,
+                "response_length": response.calculate_content_length() or 0,
+                "trace": getattr(g, "_trace", None),
+            },
+        )
+        return response
+
+    @app.errorhandler(Exception)
+    def _unhandled(error):
+        # Log ALL exceptions with traceback
+        error_logger = logging.getLogger("error")
+        status = 500
+        if isinstance(error, HTTPException):
+            status = error.code or 500
+
+        error_logger.exception(
+            "unhandled_exception",
+            extra={
+                "operation": "unhandled_exception",
+                "method": request.method,
+                "path": request.path,
+                "status": status,
+                "content_length": request.content_length or 0,
+                "trace": getattr(g, "_trace", None),
+            },
+        )
+        msg = "Internal server error" if status >= 500 else (getattr(error, "description", "Bad request"))
+        return jsonify({"error": msg}), status
+    
     # Register blueprints
     app.register_blueprint(search_bp, url_prefix='/api')
     app.register_blueprint(scrape_bp, url_prefix='/api')
@@ -51,6 +114,15 @@ def create_app():
                 '/api/analyze',
                 '/api/pipeline'
             ]
+        })
+    
+    @app.route('/api/_diagnostics')
+    def diagnostics():
+        """Diagnostics endpoint for checking env config"""
+        return jsonify({
+            "ok": True,
+            "gemini_key_present": bool(os.environ.get("GEMINI_API_KEY")),
+            "firecrawl_key_present": bool(os.environ.get("FIRECRAWL_API_KEY")),
         })
     
     @app.errorhandler(404)
