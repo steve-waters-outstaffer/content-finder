@@ -176,15 +176,15 @@ class GeminiClient:
         return GeminiJsonResponse(raw_text=response.text or "", data=parsed)
 
     def generate_structured_response(
-        self,
-        template_name: str,
-        context: Dict[str, Any],
-        *,
-        response_model: Type[BaseModel],
-        model: Optional[str] = None,
-        temperature: float = 0.3,
-        max_output_tokens: int = 2048,
-        system_prompt: Optional[str] = None,
+            self,
+            template_name: str,
+            context: Dict[str, Any],
+            *,
+            response_model: Type[BaseModel],
+            model: Optional[str] = None,
+            temperature: float = 0.3,
+            max_output_tokens: int = 2048,
+            system_prompt: Optional[str] = None,
     ) -> BaseModel:
         """Render a prompt template and request a structured response from Gemini."""
 
@@ -208,46 +208,27 @@ class GeminiClient:
         else:
             contents = prompt
 
-        # Get the JSON schema and clean it for Gemini compatibility
-        json_schema = response_model.model_json_schema()
-        
-        # Remove unsupported fields that Pydantic adds
-        def clean_schema_for_gemini(schema: Dict[str, Any]) -> Dict[str, Any]:
-            """Remove fields not supported by Gemini API"""
-            cleaned = schema.copy()
-            
-            # Remove top-level unsupported fields
-            cleaned.pop("additionalProperties", None)
-            cleaned.pop("$defs", None)
-            cleaned.pop("$schema", None)
-            
-            # Recursively clean nested properties
-            if "properties" in cleaned:
-                for prop_name, prop_schema in cleaned["properties"].items():
-                    if isinstance(prop_schema, dict):
-                        cleaned["properties"][prop_name] = clean_schema_for_gemini(prop_schema)
-            
-            # Clean array items
-            if "items" in cleaned and isinstance(cleaned["items"], dict):
-                cleaned["items"] = clean_schema_for_gemini(cleaned["items"])
-                
-            return cleaned
-        
-        cleaned_schema = clean_schema_for_gemini(json_schema)
-        
-        # The new SDK requires wrapping the schema properly
-        try:
-            response_schema = types.Schema.from_dict(cleaned_schema)
-        except Exception:
-            # Fallback: try using the schema directly
-            response_schema = cleaned_schema
-
         generation_config = types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
-            response_schema=response_schema,
+            response_schema=response_model,
         )
+
+        # --- START NEW LOGGING ---
+        # Add detailed logging to see the exact payload being sent to the API.
+        logger.info(
+            "Sending request to Gemini for structured response.",
+            extra={
+                "operation": "gemini_structured_request_payload",
+                "model": model or self.default_model,
+                "temperature": temperature,
+                "max_output_tokens": max_output_tokens,
+                "contents": str(contents),  # Log the fully rendered prompt
+                "response_schema": response_model.schema_json(), # Log the Pydantic schema as JSON
+            },
+        )
+        # --- END NEW LOGGING ---
 
         try:
             response = self._get_client().models.generate_content(
@@ -258,50 +239,14 @@ class GeminiClient:
         except Exception as exc:  # noqa: BLE001
             raise GeminiClientError(f"Gemini API error: {exc}") from exc
 
-        raw_text = (response.text or "").strip()
-        if not raw_text:
+        if not response.parsed:
             logger.error(
                 "Gemini returned an empty structured response.",
                 extra={"operation": "gemini_structured_response", "model": model or self.default_model},
             )
             raise GeminiClientError("Gemini returned an empty structured response.")
 
-        try:
-            return response_model.model_validate_json(raw_text)
-        except ValidationError as exc:
-            error_types = {
-                err.get("type")
-                for err in exc.errors()
-                if isinstance(err, dict)
-            }
-            truncated = raw_text[:500]
-            if "json_invalid" in error_types:
-                logger.error(
-                    "Gemini returned non-JSON payload.",
-                    extra={
-                        "operation": "gemini_structured_response",
-                        "model": model or self.default_model,
-                        "response_preview": truncated,
-                    },
-                )
-                raise GeminiClientError(
-                    "Gemini returned a non-JSON payload when structured output was required. "
-                    f"Raw response: {raw_text}"
-                ) from exc
-
-            logger.error(
-                "Gemini structured response failed validation.",
-                extra={
-                    "operation": "gemini_structured_response",
-                    "model": model or self.default_model,
-                    "response_preview": truncated,
-                    "validation_errors": exc.errors(),
-                },
-            )
-            raise GeminiClientError(
-                "Gemini structured response failed Pydantic validation. "
-                f"Errors: {exc} Raw response: {raw_text}"
-            ) from exc
+        return response.parsed
 
     def generate_text(
         self,

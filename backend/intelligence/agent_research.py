@@ -111,46 +111,19 @@ class AgentResearcher:
         segments = config.get("monthly_run", {}).get("segments", [])
         return next((s for s in segments if s.get("name") == segment_name), {})
 
-    def get_planner_prompt(self, segment_name: str) -> str:
-        """Construct the planner prompt from base + segment configuration."""
-
-        current_year = datetime.now().year
+    def _get_segment_config(self, segment_name: str) -> Dict[str, Any]:
+        """Load segment-specific configuration."""
         config_dir = self.prompts_dir
-
-        try:
-            base_template = self._load_prompt("planner_base.txt")
-        except FileNotFoundError:
-            return (
-                "You are a research planner. Return a JSON array of useful web "
-                "search queries for the given mission."
-            )
-
         segment_slug = segment_name.lower().replace(" ", "_")
         segment_file = config_dir / f"segment_{segment_slug}.json"
+        
         if not segment_file.exists():
             segment_file = config_dir / "segment_smb_leaders.json"
 
         try:
-            segment_config = json.loads(segment_file.read_text(encoding="utf-8"))
+            return json.loads(segment_file.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
-            segment_config = {}
-
-        priorities = "\n".join(f"- {item}" for item in segment_config.get("priorities", []))
-        focus_areas = "\n".join(f"- {item}" for item in segment_config.get("focus_areas", []))
-
-        formatted_rules: List[str] = []
-        for rule in segment_config.get("rules", []):
-            formatted_rules.append(
-                f"- {rule.format(current_year=current_year, past_year_1=current_year - 1, past_year_2=current_year - 2)}"
-            )
-
-        return base_template.format(
-            current_year=current_year,
-            audience=segment_config.get("audience", ""),
-            priorities=priorities,
-            focus_areas=focus_areas,
-            rules="\n".join(formatted_rules),
-        )
+            return {}
 
     # ------------------------------------------------------------------
     # Core research workflow
@@ -162,7 +135,19 @@ class AgentResearcher:
         max_queries: int = 10,
         log_callback: Optional[Callable[[str, str], None]] = None,
     ) -> List[str]:
-        planner_context = self.get_planner_prompt(segment_name)
+        # Load segment config for prompt context
+        segment_config = self._get_segment_config(segment_name)
+        current_year = datetime.now().year
+        
+        # Format segment-specific context
+        priorities = "\n".join(f"- {item}" for item in segment_config.get("priorities", []))
+        focus_areas = "\n".join(f"- {item}" for item in segment_config.get("focus_areas", []))
+        
+        formatted_rules: List[str] = []
+        for rule in segment_config.get("rules", []):
+            formatted_rules.append(
+                f"- {rule.format(current_year=current_year, past_year_1=current_year - 1, past_year_2=current_year - 2)}"
+            )
 
         logger.info(
             "Planning queries",
@@ -173,20 +158,6 @@ class AgentResearcher:
                 "max_queries": max_queries,
             },
         )
-
-        logger.debug(
-            "Planner prompt context assembled for Gemini.",
-            extra={
-                "operation": "agent_plan_queries",
-                "segment_name": segment_name,
-                "planner_context": planner_context,
-            },
-        )
-        if log_callback:
-            log_callback(
-                f"Planner prompt context assembled for Gemini.\n{planner_context}",
-                "debug",
-            )
 
         try:
             start_time = time.perf_counter()
@@ -206,9 +177,13 @@ class AgentResearcher:
                 )
 
             response = self.gemini.generate_structured_response(
-                "agent_research_planner_prompt.txt",
+                "audience_intelligence_query_generation.txt",
                 {
-                    "planner_context": planner_context,
+                    "current_year": current_year,
+                    "audience": segment_config.get("audience", ""),
+                    "priorities": priorities,
+                    "focus_areas": focus_areas,
+                    "rules": "\n".join(formatted_rules),
                     "mission": mission,
                     "max_queries": max_queries,
                 },

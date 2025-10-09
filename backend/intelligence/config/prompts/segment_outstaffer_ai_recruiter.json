@@ -9,18 +9,17 @@
     "Ensuring fair, structured and unbiased screening"
   ],
   "focus_areas": [
-    "Comparative research on AI‑led vs human‑led screening, including metrics such as job offer rates, start rates and early retention (e.g., +12% more offers and +18% more starts with AI interviews【965549783057828†L282-L373】)",
-    "Studies on candidate preference for AI interviews (e.g., 78% of applicants choose AI when given the choice【965549783057828†L282-L375】) and its impact on employer branding",
-    "Evidence of bias reduction in AI‑driven interviews (e.g., ~45% fewer reports of gender bias【965549783057828†L282-L373】) and best practices for fairness",
-    "Cost and time breakdown of traditional hiring versus AI‑managed recruitment services, including 15‑20+ hours saved per role and 90% cost savings【965549783057828†L346-L354】",
+    "Comparative research on AI‑led vs human‑led screening, including metrics such as job offer rates, start rates and early retention (e.g., +12% more offers and +18% more starts with AI interviews)",
+    "Studies on candidate preference for AI interviews (e.g., 78% of applicants choose AI when given the choice) and its impact on employer branding",
+    "Evidence of bias reduction in AI‑driven interviews (e.g., ~45% fewer reports of gender bias) and best practices for fairness",
+    "Cost and time breakdown of traditional hiring versus AI‑managed recruitment services, including 15‑20+ hours saved per role and 90% cost savings",
     "Business case for managed recruitment services over adding in‑house headcount (ROI, scalability and access to recruiter oversight)",
     "Trends in conversational AI, generative interviewing and compliance considerations over the last 12–18 months"
   ],
   "rules": [
     "Prioritise independent research, case studies and industry reports published in the last 12–18 months",
     "Quantify the value of AI‑driven recruitment (time saved, cost reductions, offer/start/retention improvements, bias reduction)",
-    "Include candidate sentiment and fairness metrics in queries",
-    "Output a pure JSON array of strings (queries). No extra text"
+    "Include candidate sentiment and fairness metrics in queries"
   ],
   "subreddits": [
     "recruiting",

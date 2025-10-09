@@ -72,10 +72,18 @@ const SessionWorkflow = ({ segment, onComplete }) => {
       }
 
       const result = await response.json();
+      
+      // Log the response to debug
+      console.log('Session created:', result);
+      
+      // Set session ID from response
       setSessionId(result.session_id);
+      
+      // Move to first step immediately
       setActiveStep(0);
 
     } catch (error) {
+      console.error('Session creation error:', error);
       setError(error.message);
     } finally {
       setCreatingSession(false);

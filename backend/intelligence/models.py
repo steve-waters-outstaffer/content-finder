@@ -73,8 +73,6 @@ class QuerySource(str, Enum):
 class QueryPlanQuery(BaseModel):
     """A precise, actionable web search query tailored to the research mission."""
 
-    model_config = ConfigDict(extra="forbid")
-
     query: str = Field(
         ...,
         description="A precise, actionable web search query tailored to the research mission.",
@@ -94,8 +92,6 @@ class QueryPlanQuery(BaseModel):
 
 class QueryPlan(BaseModel):
     """Structured set of search queries returned by the planner."""
-
-    model_config = ConfigDict(extra="forbid")
 
     queries: List[QueryPlanQuery] = Field(
         ...,

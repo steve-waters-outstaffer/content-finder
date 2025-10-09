@@ -35,21 +35,40 @@ const QueryGeneration = ({ sessionId, segment, onQueriesReady }) => {
 
   useEffect(() => {
     if (sessionId) {
+      console.log('QueryGeneration: Loading session', sessionId);
       loadSession();
     }
   }, [sessionId]);
 
   const loadSession = async () => {
+    setLoading(true);
+    setError('');
     try {
+      console.log('Fetching session:', sessionId);
       const response = await fetch(`https://content-finder-backend-4ajpjhwlsq-ts.a.run.app/api/intelligence/sessions/${sessionId}`);
-      if (response.ok) {
-        const data = await response.json();
-        setSessionData(data);
-        setQueries(data.queries || []);
+      
+      if (!response.ok) {
+        throw new Error(`Failed to load session: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Session data loaded:', data);
+      
+      setSessionData(data);
+      
+      // Check if queries exist
+      if (data.queries && Array.isArray(data.queries)) {
+        console.log('Queries found:', data.queries.length);
+        setQueries(data.queries);
+      } else {
+        console.warn('No queries in session data:', data);
+        setError('Session created but no queries were generated. Please try again.');
       }
     } catch (error) {
       console.error('Failed to load session:', error);
-      setError('Failed to load session data');
+      setError(`Failed to load session data: ${error.message}`);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -102,6 +121,29 @@ const QueryGeneration = ({ sessionId, segment, onQueriesReady }) => {
   };
 
   const selectedCount = queries.filter(q => q.selected).length;
+
+  // Show loading state while fetching session
+  if (loading && queries.length === 0) {
+    return (
+        <Box display="flex" flexDirection="column" alignItems="center" justifyContent="center" py={8}>
+          <CircularProgress size={48} sx={{ mb: 2 }} />
+          <Typography variant="body1" color="text.secondary">
+            Loading queries for {segment?.name}...
+          </Typography>
+        </Box>
+    );
+  }
+
+  // Show error state if no queries after loading
+  if (!loading && queries.length === 0 && !error) {
+    return (
+        <Box>
+          <Alert severity="warning" sx={{ mb: 3 }}>
+            No queries were generated for this session. Please try creating a new session.
+          </Alert>
+        </Box>
+    );
+  }
 
   return (
       <Box>
