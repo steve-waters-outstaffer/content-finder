@@ -208,11 +208,24 @@ class GeminiClient:
         else:
             contents = prompt
 
+        # Convert Pydantic model to schema format that Gemini expects
+        schema_dict = response_model.model_json_schema()
+        schema_config: Any = schema_dict
+        
+        if hasattr(types, "Schema"):
+            try:
+                schema_config = types.Schema(schema_dict)
+            except TypeError:
+                try:
+                    schema_config = types.Schema.from_dict(schema_dict)  # type: ignore[attr-defined]
+                except Exception:
+                    schema_config = schema_dict
+
         generation_config = types.GenerateContentConfig(
             temperature=temperature,
             max_output_tokens=max_output_tokens,
             response_mime_type="application/json",
-            response_schema=response_model,
+            response_schema=schema_config,
         )
 
         # --- START NEW LOGGING ---
@@ -239,10 +252,44 @@ class GeminiClient:
         except Exception as exc:  # noqa: BLE001
             raise GeminiClientError(f"Gemini API error: {exc}") from exc
 
+        # Log full response for debugging
+        candidate_info = []
+        if hasattr(response, 'candidates') and response.candidates:
+            for idx, candidate in enumerate(response.candidates):
+                info = {
+                    "index": idx,
+                    "finish_reason": str(candidate.finish_reason) if hasattr(candidate, 'finish_reason') else None,
+                    "has_content": bool(candidate.content) if hasattr(candidate, 'content') else False,
+                }
+                if hasattr(candidate, 'safety_ratings'):
+                    info["safety_ratings"] = [
+                        {"category": str(rating.category), "probability": str(rating.probability)}
+                        for rating in candidate.safety_ratings
+                    ]
+                candidate_info.append(info)
+
+        logger.info(
+            "Received response from Gemini",
+            extra={
+                "operation": "gemini_structured_response_debug",
+                "model": model or self.default_model,
+                "has_text": bool(response.text),
+                "text_preview": (response.text or "")[:500] if response.text else None,
+                "has_parsed": bool(response.parsed),
+                "candidates_count": len(response.candidates) if hasattr(response, 'candidates') else 0,
+                "candidates": candidate_info,
+            },
+        )
+
         if not response.parsed:
             logger.error(
                 "Gemini returned an empty structured response.",
-                extra={"operation": "gemini_structured_response", "model": model or self.default_model},
+                extra={
+                    "operation": "gemini_structured_response", 
+                    "model": model or self.default_model,
+                    "response_text": response.text if hasattr(response, 'text') else None,
+                    "candidates": candidate_info,
+                },
             )
             raise GeminiClientError("Gemini returned an empty structured response.")
 
